@@ -185,3 +185,66 @@ def test_planner_exhausted_corrections_aborts():
     with pytest.raises(PlanValidationError) as exc_info:
         planner.plan(inventory)
     assert "correction attempts" in str(exc_info.value)
+
+
+def test_extract_json_markdown_blocks():
+    """Test extract_json strips markdown code blocks and preambles cleanly."""
+    from commitcraft.planner import extract_json
+
+    # 1. Clean JSON
+    assert extract_json('{"key": "value"}') == {"key": "value"}
+
+    # 2. Markdown fenced with ```json
+    markdown_json = "```json\n{\n  \"version\": \"1.0\",\n  \"groups\": []\n}\n```"
+    assert extract_json(markdown_json) == {"version": "1.0", "groups": []}
+
+    # 3. Conversational preamble before JSON
+    preamble_json = "Here is the commit plan you requested:\n```json\n{\"foo\": \"bar\"}\n```\nHope this helps!"
+    assert extract_json(preamble_json) == {"foo": "bar"}
+
+
+def test_planner_with_repo_context():
+    """Test planner includes repo_context in user prompt."""
+    u1 = make_unit("U001")
+    captured_messages = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_messages
+        if request.url.path == "/api/tags":
+            return httpx.Response(200, json={"models": [{"name": "llama3.2:3b"}]})
+        body = json.loads(request.content)
+        captured_messages = body.get("messages", [])
+        return httpx.Response(
+            200,
+            json={
+                "message": {
+                    "role": "assistant",
+                    "content": json.dumps({
+                        "version": "1.0",
+                        "groups": [
+                            {
+                                "id": "G01",
+                                "unit_ids": ["U001"],
+                                "title": "Unit 1",
+                                "explanation": "Exp",
+                                "commit_type": "feat",
+                                "message": "feat: unit 1",
+                            }
+                        ],
+                    }),
+                }
+            },
+        )
+
+    transport = httpx.MockTransport(handler)
+    client = httpx.Client(transport=transport)
+    ollama = OllamaClient(client=client)
+    repo_context = {"branch": "feat/my-feature", "components": ["auth", "cli"]}
+    planner = SemanticPlanner(ollama, repo_context=repo_context)
+
+    plan = planner.plan([u1])
+    assert len(plan.groups) == 1
+    # Check that repo_context was sent in the user prompt payload
+    user_prompt = captured_messages[1]["content"]
+    assert "feat/my-feature" in user_prompt
+    assert "components" in user_prompt
