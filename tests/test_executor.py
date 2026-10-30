@@ -171,3 +171,44 @@ def test_executor_guarded_update_ref_prevents_race(test_repo: git.Repo):
 
     with pytest.raises(Exception):
         executor.execute(preflight, snapshot, approval_confirmed=True)
+
+
+def test_executor_preserves_line_endings_tree_equality(test_repo: git.Repo):
+    """Verify that CRLF and mixed line endings maintain mathematical tree equality."""
+    repo_dir = Path(test_repo.working_tree_dir)
+
+    # Write files with CRLF and mixed line endings
+    crlf_file = repo_dir / "crlf_doc.md"
+    crlf_file.write_bytes(b"# Title\r\nLine 2 with CRLF\r\n")
+
+    mixed_file = repo_dir / "mixed_code.py"
+    mixed_file.write_bytes(b"def func():\n    return True\r\n")
+
+    inspector = RepositoryInspector(repo_dir)
+    repo, runner, state = inspector.inspect()
+    snapshot_engine = SnapshotEngine(repo, runner, state)
+    snapshot = snapshot_engine.capture_snapshot()
+
+    units = DiffParser.parse(snapshot.diff_text)
+    assert len(units) == 2
+
+    g1 = CommitGroupProposal(
+        id="G01",
+        unit_ids=[u.id for u in units],
+        title="CRLF and mixed files",
+        explanation="Add documentation and code with CRLF line endings",
+        commit_type="docs",
+        message="docs: add files with preserved line endings",
+    )
+
+    executor = PlanExecutor(repo, runner, snapshot_engine)
+    preflight = executor.preflight_replay([g1], units, snapshot)
+
+    assert preflight.patch_replay_success
+    assert preflight.tree_equality
+    assert preflight.final_tree == snapshot.target_tree
+
+    res = executor.execute(preflight, snapshot, approval_confirmed=True)
+    assert res.final_tree == snapshot.target_tree
+    assert test_repo.git.status("--short") == ""
+
