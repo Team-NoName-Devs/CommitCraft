@@ -358,7 +358,7 @@ def test_cli_split_interactive_letter_shortcut_abort(test_repo: git.Repo, cli_ru
 def test_cli_split_creates_individual_prs_and_branches(
     test_repo: git.Repo, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch
 ):
-    """Test split creates individual PR files in .git/prs/ and dedicated branches for each group."""
+    """Test split creates individual PR files in .commit_craft/prs/ and dedicated branches for each group."""
     repo_dir = Path(test_repo.working_tree_dir)
     (repo_dir / "service.py").write_text("service = 1\n", encoding="utf-8")
     (repo_dir / "test_service.py").write_text("assert service == 1\n", encoding="utf-8")
@@ -400,7 +400,7 @@ def test_cli_split_creates_individual_prs_and_branches(
     assert "PR_G01.md" in result.stdout
     assert "PR_G02.md" in result.stdout
 
-    prs_dir = Path(test_repo.git_dir) / "prs"
+    prs_dir = repo_dir / ".commit_craft" / "prs"
     assert (prs_dir / "PR_G01.md").is_file()
     assert (prs_dir / "PR_G02.md").is_file()
 

@@ -9,7 +9,8 @@ from commitcraft.schemas import CommitGroupProposal, PlanProposal
 
 
 DEFAULT_PR_FILENAME = "COMMITCRAFT_PR.md"
-DEFAULT_PRS_DIR = "prs"
+DEFAULT_COMMITCRAFT_DIR = ".commit_craft"
+DEFAULT_PRS_SUBDIR = "prs"
 
 
 class PRDescriptionGenerator:
@@ -274,10 +275,11 @@ class PRDescriptionGenerator:
     def save_individual_prs(
         cls,
         prs: dict[str, str],
-        git_dir: Path,
+        git_dir: Optional[Path] = None,
+        repo_root: Optional[Path] = None,
         custom_path: Optional[Path] = None,
     ) -> list[Path]:
-        """Save individual PR descriptions to disk under .git/prs/PR_<group_id>.md.
+        """Save individual PR descriptions to disk under .commit_craft/prs/PR_<group_id>.md.
 
         If custom_path is specified:
         - If custom_path has no file extension or is a directory, writes PR_<group_id>.md inside it.
@@ -286,7 +288,6 @@ class PRDescriptionGenerator:
           * If multiple groups, writes <stem>_<group_id><suffix> and also writes combined to custom_path.
         """
         saved_paths: list[Path] = []
-        git_dir_resolved = Path(git_dir).resolve()
 
         if custom_path:
             target = Path(custom_path).resolve()
@@ -313,17 +314,32 @@ class PRDescriptionGenerator:
                     if target not in saved_paths:
                         saved_paths.append(target)
         else:
-            prs_dir = git_dir_resolved / DEFAULT_PRS_DIR
+            if repo_root:
+                base_root = Path(repo_root).resolve()
+            elif git_dir:
+                g_path = Path(git_dir).resolve()
+                base_root = g_path.parent if g_path.name == ".git" else g_path
+            else:
+                base_root = Path.cwd().resolve()
+
+            commitcraft_dir = base_root / DEFAULT_COMMITCRAFT_DIR
+            prs_dir = commitcraft_dir / DEFAULT_PRS_SUBDIR
             prs_dir.mkdir(parents=True, exist_ok=True)
+
             for group_id, content in prs.items():
                 file_path = prs_dir / f"PR_{group_id}.md"
                 file_path.write_text(content, encoding="utf-8")
                 saved_paths.append(file_path)
 
-            # Backwards compatibility: also write combined to .git/COMMITCRAFT_PR.md
-            legacy_file = git_dir_resolved / DEFAULT_PR_FILENAME
+            # Combined reference file in .commit_craft/
             combined_md = "\n\n---\n\n".join(prs.values())
-            legacy_file.write_text(combined_md, encoding="utf-8")
+            summary_file = commitcraft_dir / DEFAULT_PR_FILENAME
+            summary_file.write_text(combined_md, encoding="utf-8")
+
+            # Backwards compatibility if git_dir was provided
+            if git_dir:
+                legacy_file = Path(git_dir).resolve() / DEFAULT_PR_FILENAME
+                legacy_file.write_text(combined_md, encoding="utf-8")
 
         return saved_paths
 

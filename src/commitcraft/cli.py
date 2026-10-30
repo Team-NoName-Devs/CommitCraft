@@ -581,6 +581,7 @@ def split(
     )
     saved_paths = PRDescriptionGenerator.save_individual_prs(
         prs,
+        repo_root=Path(repo.working_tree_dir) if repo.working_tree_dir else Path(repo.git_dir).parent,
         git_dir=Path(repo.git_dir),
         custom_path=Path(custom_pr_path) if custom_pr_path else None,
     )
