@@ -133,3 +133,36 @@ def test_pr_description_no_test_files_and_fallback_summary(temp_dir: Path):
     assert saved == custom_output
     assert saved.is_file()
 
+
+def test_pr_description_breaking_changes():
+    """Test that breaking change commits are highlighted prominently in PR description."""
+    u1 = ChangeUnit(
+        id="U001",
+        path="src/api.py",
+        kind="modify",
+        summary="Revamp API response schema",
+        hunk_header=None,
+        added_lines=5,
+        removed_lines=5,
+        is_binary=False,
+        is_splittable=False,
+        excerpt="+new_api()",
+        patch_text="",
+        context_info="class ApiHandler",
+    )
+    g1 = CommitGroupProposal(
+        id="G01",
+        unit_ids=["U001"],
+        title="Breaking API overhaul",
+        explanation="Remove deprecated v1 endpoints",
+        commit_type="feat",
+        message="feat(api)!: remove deprecated v1 endpoints",
+    )
+    plan = PlanProposal(groups=[g1])
+    md = PRDescriptionGenerator.generate_markdown(plan, None, [u1])
+
+    assert "## ⚠ Breaking Changes" in md
+    assert "Breaking API overhaul" in md
+    assert "Remove deprecated v1 endpoints" in md
+    assert "`class ApiHandler`" in md
+

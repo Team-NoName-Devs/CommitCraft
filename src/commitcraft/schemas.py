@@ -56,6 +56,15 @@ class CommitGroupProposal(BaseModel):
     @classmethod
     def validate_commit_type(cls, v: str) -> str:
         v_clean = v.strip().lower()
+        if "(" in v_clean:
+            base_type = v_clean.split("(")[0].strip()
+            if base_type in COMMIT_TYPES:
+                return base_type
+        if v_clean.endswith(":"):
+            base_type = v_clean[:-1].strip()
+            if base_type in COMMIT_TYPES:
+                return base_type
+
         if v_clean not in COMMIT_TYPES:
             raise ValueError(f"Invalid commit type '{v}'. Must be one of: {', '.join(COMMIT_TYPES)}")
         return v_clean
@@ -66,7 +75,8 @@ class CommitGroupProposal(BaseModel):
         v_clean = v.strip()
         if not v_clean:
             raise ValueError("Commit message cannot be empty.")
-        if not CONVENTIONAL_COMMIT_REGEX.match(v_clean):
+        first_line = v_clean.splitlines()[0].strip()
+        if not CONVENTIONAL_COMMIT_REGEX.match(first_line):
             raise ValueError(
                 f"Commit message '{v_clean}' does not match Conventional Commits format "
                 "(e.g. 'feat(scope): concise description')."

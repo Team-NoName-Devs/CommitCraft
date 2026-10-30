@@ -148,3 +148,33 @@ def test_binary_file_diff_parsing(test_repo: git.Repo):
     assert not unit.is_splittable
     assert "[Binary content]" in unit.excerpt
 
+
+def test_infer_scope_hint():
+    """Test inferring conventional commit scopes from various file paths."""
+    from commitcraft.diff_parser import infer_scope_hint
+
+    assert infer_scope_hint("src/commitcraft/diff_parser.py") == "diff-parser"
+    assert infer_scope_hint("src/commitcraft/cli.py") == "cli"
+    assert infer_scope_hint("tests/test_planner.py") == "planner"
+    assert infer_scope_hint("README.md") == "docs"
+    assert infer_scope_hint("docs/index.md") == "docs"
+    assert infer_scope_hint("pyproject.toml") == "build"
+    assert infer_scope_hint(".github/workflows/ci.yml") == "ci"
+    assert infer_scope_hint(".gitignore") == "config"
+
+
+def test_extract_context_info():
+    """Test extracting symbol context from diff hunk headers."""
+    from commitcraft.diff_parser import extract_context_info
+
+    # 1. Extracted from section_header
+    assert extract_context_info(None, "def calculate_total():") == "def calculate_total():"
+
+    # 2. Extracted from @@ ... @@ header line
+    header = "@@ -20,6 +20,10 @@ class OrderProcessor:"
+    assert extract_context_info(header) == "class OrderProcessor:"
+
+    # 3. None when no symbol present
+    assert extract_context_info("@@ -1,5 +1,5 @@") is None
+    assert extract_context_info(None, None) is None
+

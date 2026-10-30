@@ -87,3 +87,18 @@ def test_empty_groups_dependency():
     """Test that resolving empty groups returns an empty list."""
     assert DependencyResolver.resolve_order([]) == []
 
+
+def test_stable_ordering_preserves_input_sequence():
+    """Test that independent groups with no dependencies strictly preserve input sequence."""
+    g1 = make_group("G01")
+    g2 = make_group("G02")
+    g3 = make_group("G03")
+
+    # Sequence 1: G01, G02, G03
+    ord1 = DependencyResolver.resolve_order([g1, g2, g3])
+    assert [g.id for g in ord1] == ["G01", "G02", "G03"]
+
+    # Sequence 2: G03, G01, G02
+    ord2 = DependencyResolver.resolve_order([g3, g1, g2])
+    assert [g.id for g in ord2] == ["G03", "G01", "G02"]
+

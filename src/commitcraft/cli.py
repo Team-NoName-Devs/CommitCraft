@@ -140,6 +140,11 @@ def inspect(
 
         total_changes = len(state.staged_files) + len(state.unstaged_files) + len(state.untracked_files)
         if total_changes > 0:
+            from commitcraft.diff_parser import infer_scope_hint
+            all_paths = state.staged_files + state.unstaged_files + state.untracked_files
+            detected_scopes = sorted(list({s for p in all_paths if (s := infer_scope_hint(p))}))
+            if detected_scopes:
+                console.print(f"[bold cyan]Detected Scopes/Components:[/bold cyan] {', '.join(detected_scopes)}")
             console.print(
                 "[dim]💡 Run [bold white]commitcraft split[/bold white] to analyze and group changes into logical commits.[/dim]\n"
             )
@@ -300,7 +305,19 @@ def split(
         connect_timeout=app_config.connect_timeout,
         read_timeout=app_config.read_timeout,
     )
-    planner = SemanticPlanner(ollama_client, max_corrections=app_config.max_correction_attempts)
+    repo_context = {
+        "branch": state.branch_name,
+        "total_units": len(units),
+        "staged_count": len(state.staged_files),
+        "unstaged_count": len(state.unstaged_files),
+        "untracked_count": len(state.untracked_files),
+        "components": sorted(list({u.scope_hint for u in units if u.scope_hint})),
+    }
+    planner = SemanticPlanner(
+        ollama_client,
+        max_corrections=app_config.max_correction_attempts,
+        repo_context=repo_context,
+    )
 
     try:
         with console.status(f"[cyan]Requesting semantic plan from {REQUIRED_MODEL} via Ollama...[/cyan]"):

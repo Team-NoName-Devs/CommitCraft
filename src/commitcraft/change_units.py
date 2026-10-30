@@ -19,10 +19,12 @@ class ChangeUnit:
     is_splittable: bool
     excerpt: str
     patch_text: str  # Immutable native unified diff patch
+    scope_hint: Optional[str] = None
+    context_info: Optional[str] = None
 
     def to_prompt_dict(self) -> dict:
         """Compact dictionary representation formatted for LLM prompt context."""
-        return {
+        data = {
             "id": self.id,
             "path": self.path,
             "kind": self.kind,
@@ -33,3 +35,8 @@ class ChangeUnit:
             "is_binary": self.is_binary,
             "excerpt": self.excerpt,
         }
+        if self.scope_hint:
+            data["scope_hint"] = self.scope_hint
+        if self.context_info:
+            data["context_info"] = self.context_info
+        return data

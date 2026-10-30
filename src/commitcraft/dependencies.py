@@ -36,10 +36,11 @@ class DependencyResolver:
 
             graph[g.id] = set(g.depends_on)
 
-        # Topological sort
+        # Stable topological sort preserving original relative order for independent nodes
+        original_indices = {g.id: i for i, g in enumerate(groups)}
         sorter = TopologicalSorter(graph)
         try:
-            sorted_ids = list(sorter.static_order())
+            sorter.prepare()
         except CycleError as e:
             cycle_nodes = e.args[1] if len(e.args) > 1 else list(graph.keys())
             cycle_str = " -> ".join(str(n) for n in cycle_nodes)
@@ -47,5 +48,13 @@ class DependencyResolver:
                 f"Dependency cycle detected among commit groups: {cycle_str}",
                 resolution="Edit group dependencies to remove the circular reference.",
             ) from e
+
+        sorted_ids: list[str] = []
+        while sorter.is_active():
+            ready = sorter.get_ready()
+            sorted_ready = sorted(ready, key=lambda gid: original_indices.get(gid, 0))
+            for gid in sorted_ready:
+                sorted_ids.append(gid)
+                sorter.done(gid)
 
         return [group_map[gid] for gid in sorted_ids if gid in group_map]
