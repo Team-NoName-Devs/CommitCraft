@@ -220,3 +220,63 @@ def test_assert_valid_raises_plan_validation_error():
     assert "Plan validation failed with" in str(exc_info.value)
     assert "contains no change units" in str(exc_info.value)
 
+
+def test_modify_before_add_rejected():
+    """Test that modifying a file in a group ordered before the file's creation group is rejected."""
+    # u_add creates new_module.py
+    u_add = ChangeUnit(
+        id="U001",
+        path="new_module.py",
+        kind="add",
+        summary="Create new_module.py",
+        hunk_header=None,
+        added_lines=10,
+        removed_lines=0,
+        is_binary=False,
+        is_splittable=False,
+        excerpt="+def hello(): pass",
+        patch_text="",
+    )
+    # u_mod modifies new_module.py
+    u_mod = ChangeUnit(
+        id="U002",
+        path="new_module.py",
+        kind="modify",
+        summary="Update new_module.py",
+        hunk_header="@@ -1,5 +1,6 @@",
+        added_lines=2,
+        removed_lines=0,
+        is_binary=False,
+        is_splittable=False,
+        excerpt="+def world(): pass",
+        patch_text="",
+    )
+    inventory = [u_add, u_mod]
+
+    # G01 modifies new_module.py, G02 adds new_module.py. G01 has no dependency on G02 (so G01 is ordered first!)
+    plan = PlanProposal(
+        groups=[
+            CommitGroupProposal(
+                id="G01",
+                unit_ids=["U002"],
+                title="Modify before create",
+                explanation="Modifying",
+                commit_type="feat",
+                message="feat: modify module",
+                depends_on=[],
+            ),
+            CommitGroupProposal(
+                id="G02",
+                unit_ids=["U001"],
+                title="Create module",
+                explanation="Creating",
+                commit_type="feat",
+                message="feat: create module",
+                depends_on=["G01"],  # G02 depends on G01, putting G01 first!
+            ),
+        ]
+    )
+
+    errors = PlanValidator.validate(plan, inventory)
+    assert any("before it is created" in e for e in errors)
+

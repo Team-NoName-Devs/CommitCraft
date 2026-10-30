@@ -36,11 +36,13 @@ class PlanValidator:
             msg = g.message.strip()
             if not msg:
                 errors.append(f"Group '{g.id}' has an empty commit message.")
-            elif not CONVENTIONAL_COMMIT_REGEX.match(msg):
-                errors.append(
-                    f"Group '{g.id}' commit message '{msg}' does not conform to Conventional Commits "
-                    "(e.g. 'type(scope): summary')."
-                )
+            else:
+                first_line = msg.splitlines()[0].strip()
+                if not CONVENTIONAL_COMMIT_REGEX.match(first_line):
+                    errors.append(
+                        f"Group '{g.id}' commit message '{msg}' does not conform to Conventional Commits "
+                        "(e.g. 'type(scope): summary')."
+                    )
 
             for uid in g.unit_ids:
                 # Unknown unit ID
@@ -65,10 +67,35 @@ class PlanValidator:
             errors.append(f"Change units missing from plan (unassigned): {sorted(unassigned)}.")
 
         # Dependency resolution and cycle checks
+        ordered_groups = []
         try:
-            DependencyResolver.resolve_order(plan.groups)
+            ordered_groups = DependencyResolver.resolve_order(plan.groups)
         except DependencyError as e:
             errors.append(str(e))
+
+        # Check for file creation ordering invariant across groups
+        if ordered_groups and not errors:
+            unit_map = {u.id: u for u in inventory}
+            add_creators: dict[str, str] = {}
+            for g in ordered_groups:
+                for uid in g.unit_ids:
+                    u = unit_map.get(uid)
+                    if u and u.kind == "add":
+                        add_creators[u.path] = g.id
+
+            if add_creators:
+                order_index = {g.id: idx for idx, g in enumerate(ordered_groups)}
+                for g in ordered_groups:
+                    for uid in g.unit_ids:
+                        u = unit_map.get(uid)
+                        if u and u.kind in ("modify", "delete"):
+                            creator_id = add_creators.get(u.path)
+                            if creator_id and creator_id != g.id:
+                                if order_index[creator_id] > order_index[g.id]:
+                                    errors.append(
+                                        f"Group '{g.id}' {u.kind}s '{u.path}' before it is created in Group '{creator_id}'. "
+                                        f"Group '{g.id}' must be ordered after '{creator_id}'."
+                                    )
 
         return errors
 

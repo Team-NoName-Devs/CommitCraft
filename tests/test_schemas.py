@@ -137,3 +137,40 @@ def test_plan_proposal_serialization_roundtrip():
     assert len(loaded_plan.groups) == 1
     assert loaded_plan.groups[0].id == "G01"
     assert loaded_plan.groups[0].message == "feat(core): implement core logic"
+
+
+def test_commit_group_proposal_multiline_message():
+    """Verify that multi-line Conventional Commit messages (header + body) are accepted."""
+    multiline_msg = "feat(auth): implement user authentication\n\nAdd OAuth2 and session token management."
+    group = CommitGroupProposal(
+        id="G01",
+        unit_ids=["U001"],
+        title="Auth",
+        explanation="OAuth2",
+        commit_type="feat",
+        message=multiline_msg,
+    )
+    assert group.message == multiline_msg
+
+
+def test_commit_group_proposal_commit_type_resilience():
+    """Verify that attached scope or trailing colons in commit_type are normalized cleanly."""
+    g1 = CommitGroupProposal(
+        id="G01",
+        unit_ids=["U001"],
+        title="Feat with colon",
+        explanation="Exp",
+        commit_type="feat:",
+        message="feat: message",
+    )
+    assert g1.commit_type == "feat"
+
+    g2 = CommitGroupProposal(
+        id="G02",
+        unit_ids=["U001"],
+        title="Feat with scope",
+        explanation="Exp",
+        commit_type="feat(auth)",
+        message="feat(auth): message",
+    )
+    assert g2.commit_type == "feat"
