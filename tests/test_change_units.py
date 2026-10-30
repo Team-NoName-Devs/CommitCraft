@@ -71,3 +71,25 @@ def test_change_unit_empty_hunk_header():
     pdict = unit.to_prompt_dict()
     assert pdict["hunk_header"] == ""
 
+
+def test_change_unit_with_scope_and_context():
+    """Test ChangeUnit serializes scope_hint and context_info when provided."""
+    unit = ChangeUnit(
+        id="U004",
+        path="src/commitcraft/planner.py",
+        kind="modify",
+        summary="Update planner.py in plan",
+        hunk_header="@@ -50,5 +50,10 @@ def plan():",
+        added_lines=10,
+        removed_lines=2,
+        is_binary=False,
+        is_splittable=True,
+        excerpt="+plan()",
+        patch_text="",
+        scope_hint="planner",
+        context_info="def plan():",
+    )
+    pdict = unit.to_prompt_dict()
+    assert pdict["scope_hint"] == "planner"
+    assert pdict["context_info"] == "def plan():"
+
