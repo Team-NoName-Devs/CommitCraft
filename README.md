@@ -19,7 +19,7 @@ Eventually, they create **one monolithic commit** containing all those changes. 
 
 **CommitCraft** analyzes a repository's intended changes, extracts independently addressable change units (including splitting independent text hunks from the same file), and uses a local language model (**Llama 3.2 3B Instruct** running on **Ollama**) to propose logically related commit groups.
 
-Developers inspect, reorder, and refine the proposal before CommitCraft constructs actual Git commits using isolated Git indexes, strictly proving **final-tree equality** before moving any branch pointer. Once verified, CommitCraft automatically produces an editable Markdown pull-request description.
+Developers inspect, reorder, and refine the proposal before CommitCraft constructs actual Git commits using isolated Git indexes, strictly proving **final-tree equality** before moving any branch pointer. Once verified, CommitCraft automatically creates dedicated Git branches and individual, editable Markdown pull-request descriptions for each group—following idiomatic open-source contribution practices.
 
 ---
 
@@ -38,9 +38,10 @@ flowchart TD
     I --> J[Target Tree Equality Verification]
     J --> K[Explicit User Approval Prompt]
     K --> L[Git commit-tree Construction]
-    L --> M[Guarded update-ref Branch Installation]
-    M --> N[Real Index Synchronization: read-tree HEAD]
-    N --> O[PR Description Generation]
+    L --> M[Dedicated Branch Creation per Group]
+    M --> N[Guarded update-ref Branch Installation]
+    N --> O[Real Index Synchronization: read-tree HEAD]
+    O --> P[Individual PR Descriptions: .git/prs/PR_*.md]
 ```
 
 ---

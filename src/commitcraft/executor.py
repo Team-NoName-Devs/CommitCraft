@@ -1,6 +1,7 @@
 """Isolated-index patch replay, tree equality verification, and guarded commit execution."""
 
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
 import tempfile
 from typing import Optional
@@ -17,6 +18,16 @@ from commitcraft.git_runner import GitRunner
 from commitcraft.recovery import RecoveryManager, RecoveryRecord
 from commitcraft.schemas import CommitGroupProposal
 from commitcraft.snapshot import SnapshotEngine, SnapshotTarget
+
+
+def slugify(text: str, max_length: int = 30) -> str:
+    """Convert arbitrary text into a safe, clean git branch component."""
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9]+", "-", text)
+    text = text.strip("-")
+    if len(text) > max_length:
+        text = text[:max_length].rstrip("-")
+    return text or "change"
 
 
 @dataclass
@@ -42,6 +53,7 @@ class ExecutionResult:
     branch_ref: str
     final_tree: str
     ordered_groups: list[CommitGroupProposal]
+    created_branches: dict[str, str] = field(default_factory=dict)
 
 
 class PlanExecutor:
@@ -171,13 +183,43 @@ class PlanExecutor:
                 resolution="Run 'git config user.name \"Your Name\"' and 'git config user.email \"you@example.com\"'.",
             )
 
+    @classmethod
+    def generate_branch_name(
+        cls,
+        group: CommitGroupProposal,
+        existing_branches: Optional[set[str]] = None,
+    ) -> str:
+        """Generate a clean, conventional git branch name for a commit group."""
+        prefix = slugify(group.commit_type or "feature", max_length=15)
+        title_slug = slugify(group.title or "change", max_length=30)
+
+        if group.scope:
+            scope_slug = slugify(group.scope, max_length=15)
+            if title_slug.startswith(scope_slug):
+                base_name = f"{prefix}/{title_slug}"
+            else:
+                base_name = f"{prefix}/{scope_slug}-{title_slug}"
+        else:
+            base_name = f"{prefix}/{title_slug}"
+
+        candidate = base_name
+        if existing_branches and candidate in existing_branches:
+            candidate = f"{base_name}-{group.id.lower()}"
+            counter = 1
+            while existing_branches and candidate in existing_branches:
+                candidate = f"{base_name}-{group.id.lower()}-{counter}"
+                counter += 1
+
+        return candidate
+
     def execute(
         self,
         preflight: PreflightResult,
         snapshot: SnapshotTarget,
         approval_confirmed: bool = False,
+        create_group_branches: bool = True,
     ) -> ExecutionResult:
-        """Build commit chain, guarded update-ref, and index synchronization."""
+        """Build commit chain, guarded update-ref, individual group branches, and index synchronization."""
         if not approval_confirmed:
             raise ExecutionError(
                 "Execution aborted: deliberate user approval was not confirmed.",
@@ -198,7 +240,18 @@ class PlanExecutor:
 
         # 3. Construct commit objects via git commit-tree
         created_commits: list[str] = []
+        created_branches: dict[str, str] = {}
         parent = snapshot.head_commit
+
+        existing_branches: set[str] = set()
+        if create_group_branches:
+            try:
+                branch_output = self.runner.run(
+                    ["branch", "--list", "--format=%(refname:short)"], check=False
+                ).stdout
+                existing_branches = {b.strip() for b in branch_output.splitlines() if b.strip()}
+            except Exception:
+                pass
 
         for group, tree_id in zip(preflight.ordered_groups, preflight.intermediate_trees):
             commit_id = self.runner.commit_tree(
@@ -208,6 +261,21 @@ class PlanExecutor:
             )
             created_commits.append(commit_id)
             parent = commit_id
+
+            if create_group_branches:
+                b_name = self.generate_branch_name(group, existing_branches)
+                if b_name == snapshot.branch_name and len(preflight.ordered_groups) > 1:
+                    b_name = f"{b_name}-{group.id.lower()}"
+
+                if b_name != snapshot.branch_name:
+                    try:
+                        self.runner.run(["branch", "-f", b_name, commit_id])
+                        created_branches[group.id] = b_name
+                        existing_branches.add(b_name)
+                    except Exception:
+                        pass
+                else:
+                    created_branches[group.id] = b_name
 
         new_head = created_commits[-1]
 
@@ -261,4 +329,5 @@ class PlanExecutor:
             branch_ref=snapshot.branch_ref,
             final_tree=current_tree,
             ordered_groups=preflight.ordered_groups,
+            created_branches=created_branches,
         )
