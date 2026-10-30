@@ -309,3 +309,90 @@ def test_executor_index_sync_failure_creates_recovery_record(
     assert "git read-tree HEAD" in record.get_instructions()
 
 
+def test_generate_branch_name_and_collision_resolution():
+    """Test generating clean git branch names with scope and collision resolution."""
+    g1 = CommitGroupProposal(
+        id="G01",
+        unit_ids=["U001"],
+        title="Add OAuth2 login flow",
+        explanation="OAuth login",
+        commit_type="feat",
+        scope="auth",
+        message="feat(auth): add OAuth2 login flow",
+    )
+    b1 = PlanExecutor.generate_branch_name(g1)
+    assert b1 == "feat/auth-add-oauth2-login-flow"
+
+    # Collision resolution
+    existing = {"feat/auth-add-oauth2-login-flow"}
+    b2 = PlanExecutor.generate_branch_name(g1, existing_branches=existing)
+    assert b2 == "feat/auth-add-oauth2-login-flow-g01"
+
+    # Redundant scope in title handled cleanly
+    g2 = CommitGroupProposal(
+        id="G02",
+        unit_ids=["U002"],
+        title="auth token refresh",
+        explanation="refresh tokens",
+        commit_type="fix",
+        scope="auth",
+        message="fix(auth): auth token refresh",
+    )
+    b3 = PlanExecutor.generate_branch_name(g2)
+    assert b3 == "fix/auth-token-refresh"
+
+
+def test_executor_creates_dedicated_group_branches(test_repo: git.Repo):
+    """Test that PlanExecutor.execute creates dedicated Git branches for all groups."""
+    repo_dir = Path(test_repo.working_tree_dir)
+    (repo_dir / "user.py").write_text("class User: pass\n", encoding="utf-8")
+    (repo_dir / "test_user.py").write_text("def test_user(): pass\n", encoding="utf-8")
+
+    inspector = RepositoryInspector(repo_dir)
+    repo, runner, state = inspector.inspect()
+    snapshot_engine = SnapshotEngine(repo, runner, state)
+    snapshot = snapshot_engine.capture_snapshot()
+    units = DiffParser.parse(snapshot.diff_text)
+
+    u_code = next(u for u in units if "user.py" == u.path)
+    u_test = next(u for u in units if "test_user.py" == u.path)
+
+    g1 = CommitGroupProposal(
+        id="G01",
+        unit_ids=[u_code.id],
+        title="User model",
+        explanation="Add user model",
+        commit_type="feat",
+        scope="core",
+        message="feat(core): add user model",
+    )
+    g2 = CommitGroupProposal(
+        id="G02",
+        unit_ids=[u_test.id],
+        title="User tests",
+        explanation="Add user tests",
+        commit_type="test",
+        scope="core",
+        message="test(core): add user tests",
+        depends_on=["G01"],
+    )
+
+    executor = PlanExecutor(repo, runner, snapshot_engine)
+    preflight = executor.preflight_replay([g1, g2], units, snapshot)
+    res = executor.execute(preflight, snapshot, approval_confirmed=True)
+
+    assert "G01" in res.created_branches
+    assert "G02" in res.created_branches
+
+    b1 = res.created_branches["G01"]
+    b2 = res.created_branches["G02"]
+
+    # Verify branches exist in git repository pointing to respective commits
+    branch_names = [b.name for b in test_repo.branches]
+    assert b1 in branch_names
+    assert b2 in branch_names
+    assert test_repo.branches[b1].commit.hexsha == res.created_commits[0]
+    assert test_repo.branches[b2].commit.hexsha == res.created_commits[1]
+
+
+

@@ -347,15 +347,20 @@ def split(
                 console.print("\n[bold cyan]══════════════ DRY-RUN COMPLETE ══════════════[/bold cyan]")
                 console.print("[bold green]✔ All preflight replays succeeded and tree equality verified![/bold green]")
                 console.print("[dim]Dry-run mode active. No commits were written or installed to the Git branch.[/dim]")
-                pr_preview = PRDescriptionGenerator.generate_markdown(plan, None, units)
-                console.print(
-                    Panel(
-                        pr_preview[:600] + ("\n... [truncated preview]" if len(pr_preview) > 600 else ""),
-                        title="[bold cyan]PR Description Preview[/bold cyan]",
-                        border_style="cyan",
-                        box=box.ROUNDED,
+                prs = PRDescriptionGenerator.generate_individual_prs(plan, None, units)
+                console.print(f"\n[bold cyan]Individual PR Descriptions Preview ({len(prs)} PRs):[/bold cyan]")
+                for grp in ordered_groups:
+                    pr_text = prs.get(grp.id, "")
+                    branch_hint = PlanExecutor.generate_branch_name(grp)
+                    preview_snip = pr_text[:500] + ("\n... [truncated preview]" if len(pr_text) > 500 else "")
+                    console.print(
+                        Panel(
+                            preview_snip,
+                            title=f"[bold cyan]PR Description Preview — [{grp.id}] {grp.title}[/bold cyan] [dim](Branch: {branch_hint})[/dim]",
+                            border_style="cyan",
+                            box=box.ROUNDED,
+                        )
                     )
-                )
                 raise typer.Exit(code=0)
 
             if auto_approve:
@@ -566,21 +571,44 @@ def split(
     console.print(f"[bold]Verified Tree:[/bold] [green]{exec_res.final_tree[:8]}[/green] [dim](Matches exact snapshot)[/dim]\n")
 
     for idx, (commit_sha, grp) in enumerate(zip(exec_res.created_commits, exec_res.ordered_groups), 1):
-        console.print(f"  [{idx}/{len(exec_res.created_commits)}] [yellow]{commit_sha[:8]}[/yellow] {grp.message}")
+        branch_name = exec_res.created_branches.get(grp.id, "")
+        branch_info = f" [cyan]({branch_name})[/cyan]" if branch_name else ""
+        console.print(f"  [{idx}/{len(exec_res.created_commits)}] [yellow]{commit_sha[:8]}[/yellow]{branch_info} {grp.message}")
 
-    # 7. Generate editable PR description
-    pr_md = PRDescriptionGenerator.generate_markdown(plan, exec_res, units)
-    pr_path = PRDescriptionGenerator.save_pr_description(
-        pr_md,
+    # 7. Generate individual PR descriptions for each group
+    prs = PRDescriptionGenerator.generate_individual_prs(
+        plan, exec_res, units, branch_names=exec_res.created_branches
+    )
+    saved_paths = PRDescriptionGenerator.save_individual_prs(
+        prs,
         git_dir=Path(repo.git_dir),
         custom_path=Path(custom_pr_path) if custom_pr_path else None,
     )
-    console.print(f"\n[bold green]✔ PR Description generated and saved to:[/bold green] [white]{pr_path}[/white]")
+    primary_pr_display = str(saved_paths[0]) if saved_paths else ""
+    console.print(f"\n[bold green]✔ PR Description generated and saved to:[/bold green] [white]{primary_pr_display}[/white]")
+    if len(saved_paths) > 1:
+        console.print(f"[bold cyan]All individual PR descriptions ({len(saved_paths)}):[/bold cyan]")
+        for p in saved_paths:
+            console.print(f"  • [white]{p}[/white]")
+
+    if exec_res.created_branches:
+        console.print("\n[bold cyan]Individual Git branches created for PR submission:[/bold cyan]")
+        for grp in exec_res.ordered_groups:
+            b_name = exec_res.created_branches.get(grp.id)
+            if b_name:
+                console.print(f"  • [bold white]{b_name}[/bold white] [dim]({grp.id}: {grp.title})[/dim]")
+
+    pr_note = f"Review the generated PR descriptions in [bold white]{primary_pr_display}[/bold white]."
+    if len(saved_paths) > 1:
+        prs_dir = saved_paths[0].parent
+        pr_note = f"Review individual PR descriptions in [bold white]{prs_dir}[/bold white] (e.g. {saved_paths[0].name})."
+
     console.print(
         Panel(
-            f"[bold green]CommitCraft successfully created {len(exec_res.created_commits)} logical commit(s).[/bold green]\n"
+            f"[bold green]CommitCraft successfully created {len(exec_res.created_commits)} logical commit(s) "
+            f"and {len(exec_res.created_branches)} PR branch(es).[/bold green]\n"
             f"[dim]• Run [bold white]git log -n {len(exec_res.created_commits)}[/bold white] to review your clean history.\n"
-            f"• Review the generated PR description at [bold white]{pr_path}[/bold white].[/dim]",
+            f"• {pr_note}[/dim]",
             border_style="green",
             box=box.ROUNDED,
             expand=False,

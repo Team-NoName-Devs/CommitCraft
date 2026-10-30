@@ -166,3 +166,169 @@ def test_pr_description_breaking_changes():
     assert "Remove deprecated v1 endpoints" in md
     assert "`class ApiHandler`" in md
 
+
+def test_generate_group_markdown_individual():
+    """Test generating an individual PR description for a single commit group."""
+    u1 = ChangeUnit(
+        id="U001",
+        path="src/auth.py",
+        kind="modify",
+        summary="Add JWT validation",
+        hunk_header="@@ -1,5 +1,10 @@",
+        added_lines=10,
+        removed_lines=2,
+        is_binary=False,
+        is_splittable=False,
+        excerpt="+def verify_jwt():",
+        patch_text="",
+        context_info="def verify_jwt",
+    )
+    g1 = CommitGroupProposal(
+        id="G01",
+        unit_ids=["U001"],
+        title="JWT validation",
+        explanation="Enforce secure JWT checks",
+        commit_type="feat",
+        scope="auth",
+        message="feat(auth): enforce secure JWT checks",
+        depends_on=["G00"],
+    )
+    plan = PlanProposal(groups=[g1])
+
+    md = PRDescriptionGenerator.generate_group_markdown(
+        group=g1,
+        commit_sha="abcd1234ef567890",
+        inventory=[u1],
+        plan=plan,
+        branch_name="feat/auth-jwt-validation",
+    )
+
+    assert "# Pull Request Description: JWT validation" in md
+    assert "## Summary" in md
+    assert "Enforce secure JWT checks" in md
+    assert "- **Group ID**: `G01`" in md
+    assert "- **Type**: `feat` (scope: `auth`)" in md
+    assert "- **Dedicated Branch**: `feat/auth-jwt-validation`" in md
+    assert "- **Commit**: `abcd1234`: feat(auth): enforce secure JWT checks" in md
+    assert "- **Prerequisites**: Depends on group(s) `G00`" in md
+    assert "`src/auth.py`" in md
+    assert "`def verify_jwt`" in md
+    assert "Stacked PR" in md
+
+
+def test_generate_individual_prs_and_save_to_subfolder(temp_dir: Path):
+    """Test generating individual PRs for each group and saving in .git/prs/ subfolder."""
+    u1 = ChangeUnit(
+        id="U001",
+        path="src/login.py",
+        kind="modify",
+        summary="Login route",
+        hunk_header=None,
+        added_lines=5,
+        removed_lines=1,
+        is_binary=False,
+        is_splittable=False,
+        excerpt="+login()",
+        patch_text="",
+    )
+    u2 = ChangeUnit(
+        id="U002",
+        path="src/cache.py",
+        kind="modify",
+        summary="Cache layer",
+        hunk_header=None,
+        added_lines=8,
+        removed_lines=0,
+        is_binary=False,
+        is_splittable=False,
+        excerpt="+cache()",
+        patch_text="",
+    )
+    g1 = CommitGroupProposal(
+        id="G01",
+        unit_ids=["U001"],
+        title="Login route",
+        explanation="Add login handler",
+        commit_type="feat",
+        scope="auth",
+        message="feat(auth): add login handler",
+        depends_on=[],
+    )
+    g2 = CommitGroupProposal(
+        id="G02",
+        unit_ids=["U002"],
+        title="Cache store",
+        explanation="Add redis cache store",
+        commit_type="perf",
+        scope="cache",
+        message="perf(cache): add redis cache store",
+        depends_on=["G01"],
+    )
+    plan = PlanProposal(groups=[g1, g2])
+
+    execution_res = ExecutionResult(
+        created_commits=["1111111122222222", "3333333344444444"],
+        new_head="3333333344444444",
+        old_head="0000000000000000",
+        branch_ref="refs/heads/main",
+        final_tree="8888888888888888",
+        ordered_groups=[g1, g2],
+        created_branches={"G01": "feat/auth-login-handler", "G02": "perf/cache-redis-store"},
+    )
+
+    prs = PRDescriptionGenerator.generate_individual_prs(
+        plan=plan,
+        execution_res=execution_res,
+        inventory=[u1, u2],
+    )
+
+    assert len(prs) == 2
+    assert "G01" in prs
+    assert "G02" in prs
+    assert "feat(auth): add login handler" in prs["G01"]
+    assert "perf(cache): add redis cache store" in prs["G02"]
+    assert "feat/auth-login-handler" in prs["G01"]
+    assert "perf/cache-redis-store" in prs["G02"]
+
+    # Save to .git/prs/
+    git_dir = temp_dir / ".git"
+    git_dir.mkdir()
+    saved_files = PRDescriptionGenerator.save_individual_prs(prs, git_dir)
+
+    assert len(saved_files) == 2
+    pr_g01_file = git_dir / "prs" / "PR_G01.md"
+    pr_g02_file = git_dir / "prs" / "PR_G02.md"
+    assert pr_g01_file.is_file()
+    assert pr_g02_file.is_file()
+    assert pr_g01_file.read_text(encoding="utf-8") == prs["G01"]
+    assert pr_g02_file.read_text(encoding="utf-8") == prs["G02"]
+
+    # Legacy file should also exist
+    legacy_file = git_dir / "COMMITCRAFT_PR.md"
+    assert legacy_file.is_file()
+
+
+def test_save_individual_prs_custom_directory_and_file_mode(temp_dir: Path):
+    """Test saving individual PRs with custom directory and custom file destinations."""
+    prs = {
+        "G01": "# PR G01\nContent 1",
+        "G02": "# PR G02\nContent 2",
+    }
+    git_dir = temp_dir / ".git"
+    git_dir.mkdir()
+
+    # 1. Custom directory target
+    custom_dir = temp_dir / "my_custom_prs"
+    saved = PRDescriptionGenerator.save_individual_prs(prs, git_dir, custom_path=custom_dir)
+    assert len(saved) == 2
+    assert (custom_dir / "PR_G01.md").is_file()
+    assert (custom_dir / "PR_G02.md").is_file()
+
+    # 2. Custom file target with multiple groups
+    custom_file = temp_dir / "export_pr.md"
+    saved_files = PRDescriptionGenerator.save_individual_prs(prs, git_dir, custom_path=custom_file)
+    assert (temp_dir / "export_pr_G01.md").is_file()
+    assert (temp_dir / "export_pr_G02.md").is_file()
+    assert custom_file.is_file()
+
+

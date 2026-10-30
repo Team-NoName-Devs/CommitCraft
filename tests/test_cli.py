@@ -354,3 +354,63 @@ def test_cli_split_interactive_letter_shortcut_abort(test_repo: git.Repo, cli_ru
     assert "Operation aborted by user" in result.stdout
     assert test_repo.head.commit.hexsha == original_head
 
+
+def test_cli_split_creates_individual_prs_and_branches(
+    test_repo: git.Repo, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """Test split creates individual PR files in .git/prs/ and dedicated branches for each group."""
+    repo_dir = Path(test_repo.working_tree_dir)
+    (repo_dir / "service.py").write_text("service = 1\n", encoding="utf-8")
+    (repo_dir / "test_service.py").write_text("assert service == 1\n", encoding="utf-8")
+
+    monkeypatch.setattr(OllamaClient, "check_health", lambda self: None)
+
+    def mock_plan(self, inventory):
+        svc_u = next(u for u in inventory if "service.py" == u.path)
+        test_u = next(u for u in inventory if "test_service.py" == u.path)
+        return PlanProposal(
+            groups=[
+                CommitGroupProposal(
+                    id="G01",
+                    unit_ids=[svc_u.id],
+                    title="Service logic",
+                    explanation="Add core service",
+                    commit_type="feat",
+                    scope="service",
+                    message="feat(service): add core service",
+                ),
+                CommitGroupProposal(
+                    id="G02",
+                    unit_ids=[test_u.id],
+                    title="Service tests",
+                    explanation="Add test coverage",
+                    commit_type="test",
+                    scope="service",
+                    message="test(service): add test coverage",
+                    depends_on=["G01"],
+                ),
+            ]
+        )
+
+    monkeypatch.setattr(SemanticPlanner, "plan", mock_plan)
+
+    result = cli_runner.invoke(app, ["split", "--repo", str(repo_dir), "--yes"])
+    assert result.exit_code == 0
+    assert "Individual Git branches created for PR submission" in result.stdout
+    assert "PR_G01.md" in result.stdout
+    assert "PR_G02.md" in result.stdout
+
+    prs_dir = Path(test_repo.git_dir) / "prs"
+    assert (prs_dir / "PR_G01.md").is_file()
+    assert (prs_dir / "PR_G02.md").is_file()
+
+    pr1_text = (prs_dir / "PR_G01.md").read_text(encoding="utf-8")
+    assert "# Pull Request Description: Service logic" in pr1_text
+    assert "feat(service): add core service" in pr1_text
+
+    pr2_text = (prs_dir / "PR_G02.md").read_text(encoding="utf-8")
+    assert "# Pull Request Description: Service tests" in pr2_text
+    assert "test(service): add test coverage" in pr2_text
+    assert "Prerequisites" in pr2_text
+
+
