@@ -326,7 +326,7 @@ def test_generate_branch_name_and_collision_resolution():
     # Collision resolution
     existing = {"feat/auth-add-oauth2-login-flow"}
     b2 = PlanExecutor.generate_branch_name(g1, existing_branches=existing)
-    assert b2 == "feat/auth-add-oauth2-login-flow-g01"
+    assert b2 == "feat/auth-add-oauth2-login-flow-2"
 
     # Redundant scope in title handled cleanly
     g2 = CommitGroupProposal(

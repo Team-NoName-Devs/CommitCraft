@@ -8,7 +8,6 @@ from commitcraft.executor import ExecutionResult
 from commitcraft.schemas import CommitGroupProposal, PlanProposal
 
 
-DEFAULT_PR_FILENAME = "COMMITCRAFT_PR.md"
 DEFAULT_COMMITCRAFT_DIR = ".commit_craft"
 DEFAULT_PRS_SUBDIR = "prs"
 
@@ -71,13 +70,18 @@ class PRDescriptionGenerator:
             "### Type & Scope",
             "",
             f"- **Type**: `{group.commit_type}`" + (f" (scope: `{group.scope}`)" if group.scope else ""),
-            f"- **Group ID**: `{group.id}`",
             f"- **Commit**: `{sha_disp}`: {group.message}",
         ])
         if branch_name:
             lines.append(f"- **Dedicated Branch**: `{branch_name}`")
         if group.depends_on:
-            lines.append(f"- **Prerequisites**: Depends on group(s) {', '.join(f'`{d}`' for d in group.depends_on)}")
+            if plan:
+                grp_map = {g.id: g for g in plan.groups}
+                prereq_descs = [f"`{grp_map[d].message}`" for d in group.depends_on if d in grp_map]
+                prereq_str = ", ".join(prereq_descs) if prereq_descs else "prerequisite commits"
+            else:
+                prereq_str = "prerequisite commits"
+            lines.append(f"- **Prerequisites**: Depends on {prereq_str}")
         lines.append("")
 
         lines.extend([
@@ -96,7 +100,7 @@ class PRDescriptionGenerator:
                 elif unit.hunk_header:
                     desc += f", {unit.hunk_header}"
                 desc += f", +{unit.added_lines}/-{unit.removed_lines})"
-                lines.append(f"  - [{unit.id}] {desc}")
+                lines.append(f"  - {desc}")
         lines.append("")
 
         lines.extend([
@@ -139,8 +143,13 @@ class PRDescriptionGenerator:
         if branch_name:
             lines.append(f"- `Branch: {branch_name}`")
         if group.depends_on:
-            for dep in group.depends_on:
-                lines.append(f"- `Depends-On: {dep}`")
+            if plan:
+                grp_map = {g.id: g for g in plan.groups}
+                for dep in group.depends_on:
+                    dep_label = grp_map[dep].message if dep in grp_map else "prerequisite"
+                    lines.append(f"- `Depends-On: {dep_label}`")
+            else:
+                lines.append("- `Depends-On: prerequisite`")
         if is_breaking:
             lines.append(f"- `BREAKING-CHANGE: {group.explanation.strip()}`")
         lines.append("")
@@ -152,9 +161,15 @@ class PRDescriptionGenerator:
             "- Replayed and verified against the exact target snapshot tree in an isolated Git index.",
         ])
         if group.depends_on:
+            if plan:
+                grp_map = {g.id: g for g in plan.groups}
+                dep_msgs = [f"`{grp_map[d].message}`" for d in group.depends_on if d in grp_map]
+                dep_str = ", ".join(dep_msgs) if dep_msgs else "prerequisites"
+            else:
+                dep_str = "prerequisites"
             lines.append(
-                f"- **Stacked PR**: This branch depends on prerequisite group(s) "
-                f"{', '.join(f'`{d}`' for d in group.depends_on)}. Please merge or base on prerequisites first."
+                f"- **Stacked PR**: This branch depends on prerequisite changes ({dep_str}). "
+                "Please merge or base on prerequisites first."
             )
         lines.extend([
             "",
@@ -196,108 +211,6 @@ class PRDescriptionGenerator:
         return prs
 
     @classmethod
-    def generate_markdown(
-        cls,
-        plan: PlanProposal,
-        execution_res: Optional[ExecutionResult],
-        inventory: list[ChangeUnit],
-    ) -> str:
-        """Compose PR markdown text covering the plan (for unified or single-group output)."""
-        unit_map = {u.id: u for u in inventory}
-
-        ordered_groups = execution_res.ordered_groups if execution_res else plan.groups
-        created_commits = execution_res.created_commits if execution_res else ["(dry-run)"] * len(ordered_groups)
-
-        lines: list[str] = [
-            "# Pull Request Description",
-            "",
-            "## Summary",
-            "",
-        ]
-
-        if plan.summary:
-            lines.append(plan.summary.strip())
-        else:
-            lines.append(
-                f"This pull request structures {len(inventory)} change unit(s) "
-                f"into {len(created_commits)} logical, cohesive commit(s)."
-            )
-        lines.append("")
-
-        breaking = [
-            g for g in ordered_groups
-            if "!" in g.message.split(":")[0] or "BREAKING CHANGE" in g.explanation.upper() or "BREAKING CHANGE" in g.message.upper()
-        ]
-        if breaking:
-            lines.extend([
-                "## ⚠ Breaking Changes",
-                "",
-            ])
-            for bg in breaking:
-                lines.append(f"- **{bg.title}**: {bg.explanation}")
-            lines.append("")
-
-        lines.extend([
-            "## Key Changes",
-            "",
-        ])
-        for group in ordered_groups:
-            lines.append(f"### {group.title}")
-            lines.append(f"- **Type**: `{group.commit_type}`" + (f" (scope: `{group.scope}`)" if group.scope else ""))
-            lines.append(f"- **Rationale**: {group.explanation}")
-            lines.append("- **Change Units**:")
-            for uid in group.unit_ids:
-                unit = unit_map.get(uid)
-                if unit:
-                    desc = f"`{unit.path}` ({unit.kind}"
-                    if unit.context_info:
-                        desc += f", `{unit.context_info}`"
-                    elif unit.hunk_header:
-                        desc += f", {unit.hunk_header}"
-                    desc += f", +{unit.added_lines}/-{unit.removed_lines})"
-                    lines.append(f"  - [{unit.id}] {desc}")
-            lines.append("")
-
-        lines.extend([
-            "## Commits",
-            "",
-        ])
-        for commit_sha, group in zip(created_commits, ordered_groups):
-            sha_disp = commit_sha[:8] if len(commit_sha) >= 8 else commit_sha
-            lines.append(f"- `{sha_disp}`: {group.message}")
-        lines.append("")
-
-        # Testing Performed
-        lines.extend([
-            "## Testing Performed",
-            "",
-            "> [!NOTE]",
-            "> CommitCraft validates patch replay and tree equality. Automated project tests "
-            "were not executed by CommitCraft during splitting.",
-            "",
-        ])
-        test_units = [u for u in inventory if "test" in u.path.lower()]
-        if test_units:
-            lines.append("**Suggested verification steps based on modified test files:**")
-            for tu in test_units:
-                lines.append(f"- Run tests in `{tu.path}`")
-            lines.append("")
-
-        lines.extend([
-            "## Notes for Reviewers",
-            "",
-            "- All commits have been replayed and verified against the exact target snapshot tree.",
-            "- Independent hunks and files have been placed in separate logical commits for reviewability.",
-            "",
-            "---",
-            "*Generated automatically by [CommitCraft](https://github.com/Team-NoName-Devs/CommitCraft).* "
-            "Please review and edit before opening your PR.",
-            "",
-        ])
-
-        return "\n".join(lines)
-
-    @classmethod
     def save_individual_prs(
         cls,
         prs: dict[str, str],
@@ -311,7 +224,7 @@ class PRDescriptionGenerator:
         - If custom_path has no file extension or is a directory, writes PR_<group_id>.md inside it.
         - If custom_path is a file path:
           * If only 1 group, writes directly to custom_path.
-          * If multiple groups, writes <stem>_<group_id><suffix> and also writes combined to custom_path.
+          * If multiple groups, writes <stem>_<group_id><suffix> for each group.
         """
         saved_paths: list[Path] = []
 
@@ -334,11 +247,6 @@ class PRDescriptionGenerator:
                         group_file = target.parent / f"{target.stem}_{group_id}{target.suffix}"
                         group_file.write_text(content, encoding="utf-8")
                         saved_paths.append(group_file)
-                    # Also write target file for single-file expectations
-                    combined = "\n\n---\n\n".join(prs.values())
-                    target.write_text(combined, encoding="utf-8")
-                    if target not in saved_paths:
-                        saved_paths.append(target)
         else:
             if repo_root:
                 base_root = Path(repo_root).resolve()
@@ -357,33 +265,4 @@ class PRDescriptionGenerator:
                 file_path.write_text(content, encoding="utf-8")
                 saved_paths.append(file_path)
 
-            # Combined reference file in .commit_craft/
-            combined_md = "\n\n---\n\n".join(prs.values())
-            summary_file = commitcraft_dir / DEFAULT_PR_FILENAME
-            summary_file.write_text(combined_md, encoding="utf-8")
-
-            # Backwards compatibility if git_dir was provided
-            if git_dir:
-                legacy_file = Path(git_dir).resolve() / DEFAULT_PR_FILENAME
-                legacy_file.write_text(combined_md, encoding="utf-8")
-
         return saved_paths
-
-    @classmethod
-    def save_pr_description(
-        cls,
-        content: str,
-        git_dir: Path,
-        custom_path: Optional[Path] = None,
-    ) -> Path:
-        """Save PR description to disk safely without dirtying working tree by default."""
-        if custom_path:
-            target_path = Path(custom_path).resolve()
-        else:
-            target_path = Path(git_dir).resolve() / DEFAULT_PR_FILENAME
-
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(target_path, "w", encoding="utf-8") as f:
-            f.write(content)
-
-        return target_path
