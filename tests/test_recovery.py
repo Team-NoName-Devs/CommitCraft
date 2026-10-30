@@ -34,3 +34,45 @@ def test_recovery_lifecycle(temp_dir: Path):
 
     mgr.clear()
     assert not mgr.has_recovery()
+
+
+def test_recovery_instructions_details():
+    """Test that RecoveryRecord generates complete, safe recovery instructions."""
+    record = RecoveryRecord(
+        branch_ref="refs/heads/feature-x",
+        original_head="abcdef1234567890abcdef1234567890abcdef12",
+        new_head="1234567890abcdef1234567890abcdef12345678",
+        target_tree="9999999999999999999999999999999999999999",
+        created_commits=["1234567890abcdef1234567890abcdef12345678"],
+        failure_reason="Unable to write index",
+    )
+    instructions = record.get_instructions()
+    assert "refs/heads/feature-x" in instructions
+    assert "abcdef12" in instructions
+    assert "12345678" in instructions
+    assert "git read-tree HEAD" in instructions
+    assert "Do NOT run 'git reset --hard'" in instructions
+    assert "YOUR COMMITS ARE FULLY SAFE AND PRESERVED" in instructions
+
+
+def test_recovery_corrupted_json_file(temp_dir: Path):
+    """Test that RecoveryManager safely handles corrupted or unparseable JSON files."""
+    git_dir = temp_dir / ".git"
+    git_dir.mkdir()
+    rec_file = git_dir / "COMMITCRAFT_RECOVERY.json"
+    rec_file.write_text("CORRUPTED NON-JSON CONTENT", encoding="utf-8")
+
+    mgr = RecoveryManager(git_dir)
+    assert mgr.has_recovery()
+    assert mgr.load_record() is None
+
+
+def test_recovery_clear_nonexistent(temp_dir: Path):
+    """Test that calling clear() on nonexistent recovery file does not raise an exception."""
+    git_dir = temp_dir / ".git"
+    git_dir.mkdir()
+    mgr = RecoveryManager(git_dir)
+    # Should not raise
+    mgr.clear()
+    assert not mgr.has_recovery()
+

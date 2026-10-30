@@ -8,6 +8,7 @@ from commitcraft.diff_parser import DiffParser
 from commitcraft.errors import (
     BranchMovementError,
     ExecutionError,
+    IndexSyncError,
     TreeMismatchError,
 )
 from commitcraft.executor import PlanExecutor
@@ -211,4 +212,100 @@ def test_executor_preserves_line_endings_tree_equality(test_repo: git.Repo):
     res = executor.execute(preflight, snapshot, approval_confirmed=True)
     assert res.final_tree == snapshot.target_tree
     assert test_repo.git.status("--short") == ""
+
+
+def test_executor_missing_git_identity(test_repo: git.Repo, monkeypatch: pytest.MonkeyPatch):
+    """Test that execution halts if Git author/committer identity is unconfigured."""
+    repo_dir = Path(test_repo.working_tree_dir)
+    (repo_dir / "file.py").write_text("a = 1\n", encoding="utf-8")
+
+    inspector = RepositoryInspector(repo_dir)
+    repo, runner, state = inspector.inspect()
+    snapshot_engine = SnapshotEngine(repo, runner, state)
+    snapshot = snapshot_engine.capture_snapshot()
+    units = DiffParser.parse(snapshot.diff_text)
+
+    g1 = CommitGroupProposal(
+        id="G01",
+        unit_ids=[units[0].id],
+        title="File",
+        explanation="File",
+        commit_type="feat",
+        message="feat: add file",
+    )
+    executor = PlanExecutor(repo, runner, snapshot_engine)
+    preflight = executor.preflight_replay([g1], units, snapshot)
+
+    # Mock git config user.name / user.email to return empty and strip env vars
+    monkeypatch.delenv("GIT_AUTHOR_NAME", raising=False)
+    monkeypatch.delenv("GIT_COMMITTER_NAME", raising=False)
+    monkeypatch.delenv("GIT_AUTHOR_EMAIL", raising=False)
+    monkeypatch.delenv("GIT_COMMITTER_EMAIL", raising=False)
+
+    orig_run = runner.run
+
+    def mock_run(args, **kwargs):
+        if len(args) >= 2 and args[0] == "config" and args[1] in ("user.name", "user.email"):
+            import subprocess
+            return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="")
+        return orig_run(args, **kwargs)
+
+    monkeypatch.setattr(runner, "run", mock_run)
+
+    with pytest.raises(ExecutionError) as exc_info:
+        executor.execute(preflight, snapshot, approval_confirmed=True)
+    assert "Git user identity (user.name and user.email) is not configured" in str(exc_info.value)
+    assert "git config user.name" in exc_info.value.resolution
+
+
+def test_executor_index_sync_failure_creates_recovery_record(
+    test_repo: git.Repo, monkeypatch: pytest.MonkeyPatch
+):
+    """Test that if branch pointer moves but index sync fails, a recovery record is safely persisted."""
+    from commitcraft.recovery import RecoveryManager
+
+    repo_dir = Path(test_repo.working_tree_dir)
+    (repo_dir / "sync_fail.py").write_text("data = True\n", encoding="utf-8")
+
+    inspector = RepositoryInspector(repo_dir)
+    repo, runner, state = inspector.inspect()
+    snapshot_engine = SnapshotEngine(repo, runner, state)
+    snapshot = snapshot_engine.capture_snapshot()
+    units = DiffParser.parse(snapshot.diff_text)
+
+    g1 = CommitGroupProposal(
+        id="G01",
+        unit_ids=[units[0].id],
+        title="Sync fail",
+        explanation="Testing recovery record",
+        commit_type="feat",
+        message="feat: test recovery on sync failure",
+    )
+    executor = PlanExecutor(repo, runner, snapshot_engine)
+    preflight = executor.preflight_replay([g1], units, snapshot)
+
+    orig_run = runner.run
+
+    def mock_run(args, **kwargs):
+        if args == ["read-tree", "HEAD"]:
+            raise Exception("Simulated fatal index lock error during read-tree")
+        return orig_run(args, **kwargs)
+
+    monkeypatch.setattr(runner, "run", mock_run)
+
+    with pytest.raises(IndexSyncError) as exc_info:
+        executor.execute(preflight, snapshot, approval_confirmed=True)
+
+    assert "Branch moved to" in str(exc_info.value)
+    assert "Recovery instructions saved" in str(exc_info.value)
+
+    # Verify recovery manager recorded the state
+    rec_mgr = RecoveryManager(Path(test_repo.git_dir))
+    assert rec_mgr.has_recovery()
+    record = rec_mgr.load_record()
+    assert record is not None
+    assert record.branch_ref == snapshot.branch_ref
+    assert record.original_head == snapshot.head_commit
+    assert "git read-tree HEAD" in record.get_instructions()
+
 

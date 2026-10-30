@@ -66,3 +66,24 @@ def test_circular_dependency_raises_cycle_error():
     with pytest.raises(DependencyCycleError) as exc_info:
         DependencyResolver.resolve_order([g1, g2])
     assert "Dependency cycle detected" in str(exc_info.value)
+
+
+def test_diamond_dependencies():
+    """Test diamond dependency graph: G04 depends on G02 and G03, both of which depend on G01."""
+    g1 = make_group("G01")
+    g2 = make_group("G02", depends_on=["G01"])
+    g3 = make_group("G03", depends_on=["G01"])
+    g4 = make_group("G04", depends_on=["G02", "G03"])
+
+    ordered = DependencyResolver.resolve_order([g4, g3, g2, g1])
+    ids = [g.id for g in ordered]
+    assert ids[0] == "G01"
+    assert ids[3] == "G04"
+    assert ids.index("G02") < ids.index("G04")
+    assert ids.index("G03") < ids.index("G04")
+
+
+def test_empty_groups_dependency():
+    """Test that resolving empty groups returns an empty list."""
+    assert DependencyResolver.resolve_order([]) == []
+

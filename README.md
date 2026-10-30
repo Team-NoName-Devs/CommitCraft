@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: >=3.11](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Model: llama3.2:3b](https://img.shields.io/badge/Ollama-llama3.2%3A3b-orange)](https://ollama.com/library/llama3.2)
-[![Tests: 50 passed](https://img.shields.io/badge/tests-50%20passed-brightgreen)](tests/)
+[![Tests: 128 passed](https://img.shields.io/badge/tests-128%20passed-brightgreen)](tests/)
 
 ---
 
@@ -196,7 +196,7 @@ commitcraft hook remove
 
 ## 10. Running Automated Tests
 
-All 50 unit, integration, and end-to-end tests run in complete isolation with mock transports:
+All 128 unit, integration, and end-to-end tests run in complete isolation with mock transports:
 
 ```bash
 pytest
