@@ -203,14 +203,18 @@ def test_generate_group_markdown_individual():
         branch_name="feat/auth-jwt-validation",
     )
 
-    assert "# Pull Request Description: JWT validation" in md
-    assert "## Summary" in md
+    assert "# Pull Request Description: feat(auth): enforce secure JWT checks" in md
+    assert "## PR Title (Conventional Commit)" in md
+    assert "## PR Body (Conventional Commit Style)" in md
     assert "Enforce secure JWT checks" in md
     assert "- **Group ID**: `G01`" in md
     assert "- **Type**: `feat` (scope: `auth`)" in md
     assert "- **Dedicated Branch**: `feat/auth-jwt-validation`" in md
     assert "- **Commit**: `abcd1234`: feat(auth): enforce secure JWT checks" in md
     assert "- **Prerequisites**: Depends on group(s) `G00`" in md
+    assert "## Conventional Commit Footers" in md
+    assert "`Depends-On: G00`" in md
+    assert "`Branch: feat/auth-jwt-validation`" in md
     assert "`src/auth.py`" in md
     assert "`def verify_jwt`" in md
     assert "Stacked PR" in md
