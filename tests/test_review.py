@@ -218,3 +218,41 @@ def test_review_ui_render_methods():
     assert "PROPOSED COMMIT PLAN" in plan_output
     assert "feat: sample commit" in plan_output
 
+
+def test_review_ui_renders_context_and_impact():
+    """Test that ReviewUI displays context_info in table/diff and impact line stats."""
+    from io import StringIO
+    from rich.console import Console
+    from commitcraft.review import ReviewUI
+
+    buf = StringIO()
+    ui = ReviewUI(Console(file=buf, force_terminal=False))
+
+    u1 = make_unit("U001")
+    u1.context_info = "def handle_request():"
+    u1.added_lines = 15
+    u1.removed_lines = 3
+    u1.patch_text = "--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n+test\n"
+
+    # Display diff
+    ui.display_diff([u1])
+    out = buf.getvalue()
+    assert "def handle_request():" in out
+
+    # Display plan
+    g1 = CommitGroupProposal(
+        id="G01",
+        unit_ids=["U001"],
+        title="Handle requests",
+        explanation="Request handling",
+        commit_type="feat",
+        message="feat: handle requests",
+    )
+    plan = PlanProposal(groups=[g1])
+    ui.display_plan(plan, [u1])
+    plan_out = buf.getvalue()
+    assert "def handle_request():" in plan_out
+    assert "Impact:" in plan_out
+    assert "+15" in plan_out
+    assert "-3" in plan_out
+

@@ -238,14 +238,23 @@ class ReviewUI:
                         "binary": "[bold yellow]BINARY[/bold yellow]",
                         "mode_change": "[bold magenta]CHMOD[/bold magenta]",
                     }.get(unit.kind, unit.kind)
+                    ctx_desc = ""
+                    if unit.context_info:
+                        ctx_desc = f" [dim cyan]({unit.context_info})[/dim cyan]"
+                    elif unit.hunk_header:
+                        ctx_desc = f" [dim yellow]({unit.hunk_header})[/dim yellow]"
+
                     table.add_row(
                         unit.id,
                         kind_badge,
-                        unit.path + (f" [dim yellow]({unit.hunk_header})[/dim yellow]" if unit.hunk_header else ""),
+                        unit.path + ctx_desc,
                         f"[green]+{unit.added_lines}[/green] / [red]-{unit.removed_lines}[/red]",
                     )
                 else:
                     table.add_row(uid, "unknown", "?", "?")
+
+            total_added = sum(unit_map[u].added_lines for u in group.unit_ids if u in unit_map)
+            total_removed = sum(unit_map[u].removed_lines for u in group.unit_ids if u in unit_map)
 
             meta_grid = Table.grid(padding=(0, 2))
             meta_grid.add_column(style="bold yellow", justify="right")
@@ -257,6 +266,7 @@ class ReviewUI:
                 f"[cyan]{group.commit_type}[/cyan]"
                 + (f" [dim](scope: {group.scope})[/dim]" if group.scope else "")
                 + f"  •  [bold]Dependencies:[/bold] [magenta]{deps_str}[/magenta]"
+                + f"  •  [bold]Impact:[/bold] [green]+{total_added}[/green]/[red]-{total_removed}[/red]"
             )
 
             card_content = Group(
@@ -305,7 +315,9 @@ class ReviewUI:
             diff_text = unit.patch_text if unit.patch_text else (f"# Binary or empty patch\n# Path: {unit.path}\n# Kind: {unit.kind}\n")
             syntax = Syntax(diff_text, "diff", theme="monokai", background_color="default")
             header = f"[bold cyan]Unit {unit.id}[/bold cyan] • [bold white]{unit.path}[/bold white]"
-            if unit.hunk_header:
+            if unit.context_info:
+                header += f" [dim cyan]({unit.context_info})[/dim cyan]"
+            elif unit.hunk_header:
                 header += f" [dim yellow]{unit.hunk_header}[/dim yellow]"
             stats = f"[green]+{unit.added_lines}[/green] / [red]-{unit.removed_lines}[/red]"
 

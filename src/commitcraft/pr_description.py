@@ -43,6 +43,19 @@ class PRDescriptionGenerator:
             )
         lines.append("")
 
+        breaking = [
+            g for g in ordered_groups
+            if "!" in g.message.split(":")[0] or "BREAKING CHANGE" in g.explanation.upper() or "BREAKING CHANGE" in g.message.upper()
+        ]
+        if breaking:
+            lines.extend([
+                "## ⚠ Breaking Changes",
+                "",
+            ])
+            for bg in breaking:
+                lines.append(f"- **{bg.title}**: {bg.explanation}")
+            lines.append("")
+
         lines.extend([
             "## Key Changes",
             "",
@@ -56,7 +69,9 @@ class PRDescriptionGenerator:
                 unit = unit_map.get(uid)
                 if unit:
                     desc = f"`{unit.path}` ({unit.kind}"
-                    if unit.hunk_header:
+                    if unit.context_info:
+                        desc += f", `{unit.context_info}`"
+                    elif unit.hunk_header:
                         desc += f", {unit.hunk_header}"
                     desc += f", +{unit.added_lines}/-{unit.removed_lines})"
                     lines.append(f"  - [{unit.id}] {desc}")
