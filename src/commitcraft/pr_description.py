@@ -34,9 +34,17 @@ class PRDescriptionGenerator:
         )
 
         lines: list[str] = [
-            f"# Pull Request Description: {group.title}",
+            f"# Pull Request Description: {group.message}",
             "",
-            "## Summary",
+            "## PR Title (Conventional Commit)",
+            "",
+            "```text",
+            f"{group.message}",
+            "```",
+            "",
+            "## PR Body (Conventional Commit Style)",
+            "",
+            "### Description",
             "",
             group.explanation.strip(),
             "",
@@ -49,22 +57,25 @@ class PRDescriptionGenerator:
         )
         if is_breaking:
             lines.extend([
-                "## ⚠ Breaking Changes",
+                "### ⚠ Breaking Changes",
                 "",
-                f"- **{group.title}**: {group.explanation}",
+                "```text",
+                f"BREAKING CHANGE: {group.explanation.strip()}",
+                "```",
+                "",
+                f"- **{group.title}**: {group.explanation.strip()}",
                 "",
             ])
 
         lines.extend([
-            "## PR Details",
+            "### Type & Scope",
             "",
-            f"- **Group ID**: `{group.id}`",
             f"- **Type**: `{group.commit_type}`" + (f" (scope: `{group.scope}`)" if group.scope else ""),
+            f"- **Group ID**: `{group.id}`",
+            f"- **Commit**: `{sha_disp}`: {group.message}",
         ])
         if branch_name:
             lines.append(f"- **Dedicated Branch**: `{branch_name}`")
-        lines.append(f"- **Commit**: `{sha_disp}`: {group.message}")
-
         if group.depends_on:
             lines.append(f"- **Prerequisites**: Depends on group(s) {', '.join(f'`{d}`' for d in group.depends_on)}")
         lines.append("")
@@ -119,10 +130,25 @@ class PRDescriptionGenerator:
                     lines.append(f"- Run tests in `{tu.path}`")
                 lines.append("")
 
+        # Conventional Commit Footers / Git Trailers
+        lines.extend([
+            "## Conventional Commit Footers",
+            "",
+            f"- `Commit: {sha_disp}`",
+        ])
+        if branch_name:
+            lines.append(f"- `Branch: {branch_name}`")
+        if group.depends_on:
+            for dep in group.depends_on:
+                lines.append(f"- `Depends-On: {dep}`")
+        if is_breaking:
+            lines.append(f"- `BREAKING-CHANGE: {group.explanation.strip()}`")
+        lines.append("")
+
         lines.extend([
             "## Notes for Reviewers",
             "",
-            f"- This pull request contains focused changes for **{group.title}** as part of modular commit splitting.",
+            f"- This pull request contains focused changes for `{group.message}` as part of modular commit splitting.",
             "- Replayed and verified against the exact target snapshot tree in an isolated Git index.",
         ])
         if group.depends_on:

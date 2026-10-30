@@ -405,11 +405,15 @@ def test_cli_split_creates_individual_prs_and_branches(
     assert (prs_dir / "PR_G02.md").is_file()
 
     pr1_text = (prs_dir / "PR_G01.md").read_text(encoding="utf-8")
-    assert "# Pull Request Description: Service logic" in pr1_text
+    assert "# Pull Request Description: feat(service): add core service" in pr1_text
+    assert "## PR Title (Conventional Commit)" in pr1_text
+    assert "## PR Body (Conventional Commit Style)" in pr1_text
     assert "feat(service): add core service" in pr1_text
 
     pr2_text = (prs_dir / "PR_G02.md").read_text(encoding="utf-8")
-    assert "# Pull Request Description: Service tests" in pr2_text
+    assert "# Pull Request Description: test(service): add test coverage" in pr2_text
+    assert "## PR Title (Conventional Commit)" in pr2_text
+    assert "## PR Body (Conventional Commit Style)" in pr2_text
     assert "test(service): add test coverage" in pr2_text
     assert "Prerequisites" in pr2_text
 
