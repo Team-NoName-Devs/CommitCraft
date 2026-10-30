@@ -41,7 +41,7 @@ flowchart TD
     L --> M[Dedicated Branch Creation per Group]
     M --> N[Guarded update-ref Branch Installation]
     N --> O[Real Index Synchronization: read-tree HEAD]
-    O --> P[Individual PR Descriptions: .git/prs/PR_*.md]
+    O --> P[Individual PR Descriptions: .commit_craft/prs/PR_*.md]
 ```
 
 ---

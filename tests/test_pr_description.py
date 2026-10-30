@@ -290,22 +290,22 @@ def test_generate_individual_prs_and_save_to_subfolder(temp_dir: Path):
     assert "feat/auth-login-handler" in prs["G01"]
     assert "perf/cache-redis-store" in prs["G02"]
 
-    # Save to .git/prs/
+    # Save to .commit_craft/prs/
     git_dir = temp_dir / ".git"
     git_dir.mkdir()
-    saved_files = PRDescriptionGenerator.save_individual_prs(prs, git_dir)
+    saved_files = PRDescriptionGenerator.save_individual_prs(prs, repo_root=temp_dir, git_dir=git_dir)
 
     assert len(saved_files) == 2
-    pr_g01_file = git_dir / "prs" / "PR_G01.md"
-    pr_g02_file = git_dir / "prs" / "PR_G02.md"
+    pr_g01_file = temp_dir / ".commit_craft" / "prs" / "PR_G01.md"
+    pr_g02_file = temp_dir / ".commit_craft" / "prs" / "PR_G02.md"
     assert pr_g01_file.is_file()
     assert pr_g02_file.is_file()
     assert pr_g01_file.read_text(encoding="utf-8") == prs["G01"]
     assert pr_g02_file.read_text(encoding="utf-8") == prs["G02"]
 
-    # Legacy file should also exist
-    legacy_file = git_dir / "COMMITCRAFT_PR.md"
-    assert legacy_file.is_file()
+    # Summary file in .commit_craft/ should also exist
+    summary_file = temp_dir / ".commit_craft" / "COMMITCRAFT_PR.md"
+    assert summary_file.is_file()
 
 
 def test_save_individual_prs_custom_directory_and_file_mode(temp_dir: Path):
