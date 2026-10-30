@@ -151,3 +151,70 @@ def test_plan_editor_edit_message():
     # Invalid message format should raise PlanValidationError
     with pytest.raises(PlanValidationError):
         PlanEditor.edit_message(plan, "G01", "bad message without prefix", inventory)
+
+
+def test_plan_editor_edit_title():
+    """Test updating group title."""
+    u1 = make_unit("U001")
+    inventory = [u1]
+
+    plan = PlanProposal(
+        groups=[
+            CommitGroupProposal(
+                id="G01",
+                unit_ids=["U001"],
+                title="Old Title",
+                explanation="G1",
+                commit_type="feat",
+                message="feat: old message",
+            )
+        ]
+    )
+
+    updated = PlanEditor.edit_title(plan, "G01", "Brand New Title", inventory)
+    assert updated.groups[0].title == "Brand New Title"
+
+
+def test_review_ui_render_methods():
+    """Test ReviewUI banner, diff, and plan display rendering without exceptions."""
+    from io import StringIO
+    from rich.console import Console
+    from commitcraft.review import ReviewUI
+
+    buf = StringIO()
+    custom_console = Console(file=buf, force_terminal=False)
+    ui = ReviewUI(custom_console)
+
+    # 1. Test banner
+    ui.display_banner()
+    output = buf.getvalue()
+    assert "CommitCraft" in output
+    assert "AI-Powered Semantic Commit Splitter" in output
+
+    # 2. Test diff display
+    u1 = make_unit("U001")
+    u1.patch_text = "--- a/test.py\n+++ b/test.py\n@@ -1 +1 @@\n-old\n+new\n"
+    ui.display_diff([u1])
+    diff_output = buf.getvalue()
+    assert "Unit U001" in diff_output
+    assert "U001.py" in diff_output
+
+    # 3. Test plan display
+    plan = PlanProposal(
+        summary="Test plan summary",
+        groups=[
+            CommitGroupProposal(
+                id="G01",
+                unit_ids=["U001"],
+                title="Unit 1",
+                explanation="Explanation 1",
+                commit_type="feat",
+                message="feat: sample commit",
+            )
+        ]
+    )
+    ui.display_plan(plan, [u1])
+    plan_output = buf.getvalue()
+    assert "PROPOSED COMMIT PLAN" in plan_output
+    assert "feat: sample commit" in plan_output
+

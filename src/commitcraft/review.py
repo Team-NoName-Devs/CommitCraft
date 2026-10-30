@@ -2,9 +2,12 @@
 
 import copy
 from typing import Optional
-from rich.console import Console
+from rich import box
+from rich.console import Console, Group
 from rich.panel import Panel
+from rich.syntax import Syntax
 from rich.table import Table
+from rich.text import Text
 
 from commitcraft.change_units import ChangeUnit
 from commitcraft.dependencies import DependencyResolver
@@ -144,6 +147,24 @@ class PlanEditor:
         return new_plan
 
     @classmethod
+    def edit_title(
+        cls,
+        plan: PlanProposal,
+        group_id: str,
+        new_title: str,
+        inventory: list[ChangeUnit],
+    ) -> PlanProposal:
+        """Edit the title for a group."""
+        new_plan = copy.deepcopy(plan)
+        grp = next((g for g in new_plan.groups if g.id == group_id), None)
+        if not grp:
+            raise PlanValidationError(f"Group {group_id} not found.")
+        grp.title = new_title.strip()
+
+        PlanValidator.assert_valid(new_plan, inventory)
+        return new_plan
+
+    @classmethod
     def set_dependencies(
         cls,
         plan: PlanProposal,
@@ -168,6 +189,18 @@ class ReviewUI:
     def __init__(self, console: Optional[Console] = None):
         self.console = console or Console()
 
+    def display_banner(self) -> None:
+        """Render a sleek CommitCraft branding banner."""
+        self.console.print(
+            Panel(
+                "[bold cyan]CommitCraft[/bold cyan] [bold white]✦ AI-Powered Semantic Commit Splitter[/bold white]\n"
+                "[dim]Local Llama 3.2 3B • Isolated Git Index Replay • Mathematical Tree Equality[/dim]",
+                border_style="cyan",
+                box=box.ROUNDED,
+                expand=False,
+            )
+        )
+
     def display_plan(
         self,
         plan: PlanProposal,
@@ -179,7 +212,7 @@ class ReviewUI:
 
         self.console.print("\n[bold cyan]══════════════ PROPOSED COMMIT PLAN ══════════════[/bold cyan]")
         if plan.summary:
-            self.console.print(f"[dim]{plan.summary}[/dim]\n")
+            self.console.print(f"[dim italic]{plan.summary}[/dim italic]\n")
 
         ordered_groups = plan.groups
         try:
@@ -189,34 +222,55 @@ class ReviewUI:
 
         for idx, group in enumerate(ordered_groups, 1):
             deps_str = ", ".join(group.depends_on) if group.depends_on else "None"
-            table = Table(box=None, show_header=True, header_style="bold")
-            table.add_column("Unit ID", style="cyan", width=10)
+            table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan", border_style="dim")
+            table.add_column("Unit ID", style="bold cyan", width=9)
             table.add_column("Kind", width=10)
             table.add_column("Path", style="green")
-            table.add_column("Lines", justify="right", width=12)
+            table.add_column("Lines", justify="right", width=13)
 
             for uid in group.unit_ids:
                 unit = unit_map.get(uid)
                 if unit:
+                    kind_badge = {
+                        "add": "[bold green]ADD[/bold green]",
+                        "modify": "[bold cyan]MODIFY[/bold cyan]",
+                        "delete": "[bold red]DELETE[/bold red]",
+                        "binary": "[bold yellow]BINARY[/bold yellow]",
+                        "mode_change": "[bold magenta]CHMOD[/bold magenta]",
+                    }.get(unit.kind, unit.kind)
                     table.add_row(
                         unit.id,
-                        unit.kind,
-                        unit.path + (f" ({unit.hunk_header})" if unit.hunk_header else ""),
-                        f"+{unit.added_lines} / -{unit.removed_lines}",
+                        kind_badge,
+                        unit.path + (f" [dim yellow]({unit.hunk_header})[/dim yellow]" if unit.hunk_header else ""),
+                        f"[green]+{unit.added_lines}[/green] / [red]-{unit.removed_lines}[/red]",
                     )
                 else:
                     table.add_row(uid, "unknown", "?", "?")
 
-            panel_content = [
-                f"[bold yellow]Commit Message:[/bold yellow] [bold white]{group.message}[/bold white]",
-                f"[bold]Rationale:[/bold] {group.explanation}",
-                f"[bold]Dependencies:[/bold] {deps_str}",
-            ]
+            meta_grid = Table.grid(padding=(0, 2))
+            meta_grid.add_column(style="bold yellow", justify="right")
+            meta_grid.add_column()
+            meta_grid.add_row("Commit Message:", f"[bold white]{group.message}[/bold white]")
+            meta_grid.add_row("Rationale:", f"[white]{group.explanation}[/white]")
+            meta_grid.add_row(
+                "Commit Type:",
+                f"[cyan]{group.commit_type}[/cyan]"
+                + (f" [dim](scope: {group.scope})[/dim]" if group.scope else "")
+                + f"  •  [bold]Dependencies:[/bold] [magenta]{deps_str}[/magenta]"
+            )
+
+            card_content = Group(
+                meta_grid,
+                Text(""),
+                table,
+            )
+
             self.console.print(
                 Panel(
-                    table,
+                    card_content,
                     title=f"[bold green]Commit #{idx}: [{group.id}] {group.title}[/bold green]",
-                    subtitle=" \n ".join(panel_content),
+                    border_style="cyan",
+                    box=box.ROUNDED,
                     expand=False,
                 )
             )
@@ -224,9 +278,43 @@ class ReviewUI:
         if preflight:
             if preflight.tree_equality:
                 self.console.print(
-                    "[bold green]✔ Preflight replay succeeded. Target tree equality verified![/bold green]"
+                    Panel(
+                        "[bold green]✔ Preflight replay succeeded. Target tree equality verified![/bold green]\n"
+                        "[dim]All intermediate patches apply cleanly in isolated index and match target snapshot tree.[/dim]",
+                        border_style="green",
+                        box=box.ROUNDED,
+                    )
                 )
             else:
                 self.console.print(
-                    f"[bold red]✘ Preflight check failed: {preflight.error_message}[/bold red]"
+                    Panel(
+                        f"[bold red]✘ Preflight check failed: {preflight.error_message}[/bold red]\n"
+                        "[yellow]Please adjust unit assignments, dependencies, or order before executing.[/yellow]",
+                        border_style="red",
+                        box=box.ROUNDED,
+                    )
                 )
+
+    def display_diff(self, units: list[ChangeUnit]) -> None:
+        """Render syntax-highlighted diffs for the requested change units."""
+        if not units:
+            self.console.print("[yellow]No change units to display.[/yellow]")
+            return
+
+        for unit in units:
+            diff_text = unit.patch_text if unit.patch_text else (f"# Binary or empty patch\n# Path: {unit.path}\n# Kind: {unit.kind}\n")
+            syntax = Syntax(diff_text, "diff", theme="monokai", background_color="default")
+            header = f"[bold cyan]Unit {unit.id}[/bold cyan] • [bold white]{unit.path}[/bold white]"
+            if unit.hunk_header:
+                header += f" [dim yellow]{unit.hunk_header}[/dim yellow]"
+            stats = f"[green]+{unit.added_lines}[/green] / [red]-{unit.removed_lines}[/red]"
+
+            self.console.print(
+                Panel(
+                    syntax,
+                    title=header,
+                    subtitle=stats,
+                    border_style="blue",
+                    box=box.ROUNDED,
+                )
+            )
