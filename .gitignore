@@ -1,0 +1,153 @@
+
+# ==========================================
+# Python
+# ==========================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+pip-wheel-metadata/
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.mypy_cache/
+.dmypy.json
+.pyre/
+.ruff_cache/
+.hypothesis/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# ==========================================
+# JavaScript / TypeScript / Node.js
+# ==========================================
+
+node_modules/
+bower_components/
+
+# Package manager logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Package manager caches
+.npm/
+.pnpm-store/
+.yarn/cache/
+.yarn/unplugged/
+
+# ==========================================
+# Frameworks and Build Outputs
+# ==========================================
+
+# Nuxt
+.nuxt/
+.output/
+
+# Next.js
+.next/
+out/
+
+# Vue / Vite / React
+.vite/
+dist/
+
+# Angular
+.angular/
+tmp/
+
+# Svelte
+.svelte-kit/
+
+# Astro
+.astro/
+
+# Generic build outputs
+build/
+coverage/
+
+# ==========================================
+# Environment Variables / Secrets
+# ==========================================
+
+.env
+.env.*
+!.env.example
+!.env.sample
+
+*.pem
+*.key
+secrets/
+credentials.json
+
+# ==========================================
+# IDEs and Editors
+# ==========================================
+
+# VS Code
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# JetBrains
+.idea/
+*.iml
+
+# Vim
+*.swp
+*.swo
+
+# ==========================================
+# Operating Systems
+# ==========================================
+
+# Linux
+*~
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+Desktop.ini
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ==========================================
+# Logs and Temporary Files
+# ==========================================
+
+*.log
+logs/
+tmp/
+temp/
+.cache/
+
+# ==========================================
+# Miscellaneous
+# ==========================================
+
+*.bak
+*.orig
+*.rej
