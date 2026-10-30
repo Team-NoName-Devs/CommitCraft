@@ -169,11 +169,17 @@ def test_end_to_end_full_pipeline(test_repo: git.Repo):
     assert test_repo.git.status("--short") == ""
     assert test_repo.head.commit.tree.hexsha == snapshot.target_tree
 
-    # 11. Generate and verify PR description artifact
-    pr_text = PRDescriptionGenerator.generate_markdown(plan, exec_res, units)
-    pr_file = PRDescriptionGenerator.save_pr_description(pr_text, Path(test_repo.git_dir))
-    assert pr_file.is_file()
-    assert "fix(auth): validate token against active secret" in pr_text
-    assert "refactor(core): streamline formatting helpers" in pr_text
-    assert "docs(arch): add initial architecture guide" in pr_text
-    assert "test_auth.py" in pr_text
+    # 11. Generate and verify individual PR descriptions
+    prs = PRDescriptionGenerator.generate_individual_prs(
+        plan, exec_res, units, branch_names=exec_res.created_branches
+    )
+    saved_files = PRDescriptionGenerator.save_individual_prs(
+        prs, repo_root=Path(test_repo.working_tree_dir)
+    )
+    assert len(saved_files) == 3
+    for f in saved_files:
+        assert f.is_file()
+    assert "fix(auth): validate token against active secret" in prs["G01"]
+    assert "refactor(core): streamline formatting helpers" in prs["G02"]
+    assert "docs(arch): add initial architecture guide" in prs["G03"]
+    assert "test_auth.py" in prs["G01"]

@@ -203,12 +203,10 @@ class PlanExecutor:
             base_name = f"{prefix}/{title_slug}"
 
         candidate = base_name
-        if existing_branches and candidate in existing_branches:
-            candidate = f"{base_name}-{group.id.lower()}"
-            counter = 1
-            while existing_branches and candidate in existing_branches:
-                candidate = f"{base_name}-{group.id.lower()}-{counter}"
-                counter += 1
+        counter = 2
+        while existing_branches and candidate in existing_branches:
+            candidate = f"{base_name}-{counter}"
+            counter += 1
 
         return candidate
 
@@ -265,7 +263,7 @@ class PlanExecutor:
             if create_group_branches:
                 b_name = self.generate_branch_name(group, existing_branches)
                 if b_name == snapshot.branch_name and len(preflight.ordered_groups) > 1:
-                    b_name = f"{b_name}-{group.id.lower()}"
+                    b_name = f"{b_name}-2"
 
                 if b_name != snapshot.branch_name:
                     try:

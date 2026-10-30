@@ -356,7 +356,7 @@ def split(
                     console.print(
                         Panel(
                             preview_snip,
-                            title=f"[bold cyan]PR Description Preview — [{grp.id}] {grp.title}[/bold cyan] [dim](Branch: {branch_hint})[/dim]",
+                            title=f"[bold cyan]PR Description Preview — {grp.title}[/bold cyan] [dim](Branch: {branch_hint})[/dim]",
                             border_style="cyan",
                             box=box.ROUNDED,
                         )
@@ -597,7 +597,7 @@ def split(
         for grp in exec_res.ordered_groups:
             b_name = exec_res.created_branches.get(grp.id)
             if b_name:
-                console.print(f"  • [bold white]{b_name}[/bold white] [dim]({grp.id}: {grp.title})[/dim]")
+                console.print(f"  • [bold white]{b_name}[/bold white] [dim]({grp.title})[/dim]")
 
     pr_note = f"Review the generated PR descriptions in [bold white]{primary_pr_display}[/bold white]."
     if len(saved_paths) > 1:

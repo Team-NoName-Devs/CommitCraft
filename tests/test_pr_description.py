@@ -10,7 +10,7 @@ from commitcraft.schemas import CommitGroupProposal, PlanProposal
 
 
 def test_pr_description_generation(temp_dir: Path):
-    """Test generating and saving a structured PR description."""
+    """Test generating and saving individual PR descriptions per group."""
     u1 = ChangeUnit(
         id="U001",
         path="src/login.py",
@@ -68,27 +68,32 @@ def test_pr_description_generation(temp_dir: Path):
         branch_ref="refs/heads/main",
         final_tree="9999999999999999",
         ordered_groups=[g1, g2],
+        created_branches={"G01": "feat/auth-login", "G02": "test/auth-login"},
     )
 
-    md = PRDescriptionGenerator.generate_markdown(plan, execution_res, inventory)
-    assert "# Pull Request Description" in md
-    assert "feat(auth): add login endpoint" in md
-    assert "test(auth): add login tests" in md
-    assert "11111111" in md
-    assert "22222222" in md
-    assert "Automated project tests were not executed by CommitCraft" in md
-    assert "tests/test_login.py" in md
+    prs = PRDescriptionGenerator.generate_individual_prs(plan, execution_res, inventory)
+    assert len(prs) == 2
+    assert "feat(auth): add login endpoint" in prs["G01"]
+    assert "test(auth): add login tests" in prs["G02"]
+    assert "11111111" in prs["G01"]
+    assert "22222222" in prs["G02"]
+    assert "feat/auth-login" in prs["G01"]
+    assert "test/auth-login" in prs["G02"]
+    assert "tests/test_login.py" in prs["G02"]
 
     # Save to file
-    git_dir = temp_dir / ".git"
-    git_dir.mkdir()
-    saved_path = PRDescriptionGenerator.save_pr_description(md, git_dir)
-    assert saved_path.is_file()
-    assert saved_path.read_text(encoding="utf-8") == md
+    saved_paths = PRDescriptionGenerator.save_individual_prs(prs, repo_root=temp_dir)
+    assert len(saved_paths) == 2
+    for p in saved_paths:
+        assert p.is_file()
+    assert (temp_dir / ".commit_craft" / "prs" / "PR_G01.md").is_file()
+    assert (temp_dir / ".commit_craft" / "prs" / "PR_G02.md").is_file()
+    # Verify no unified PR file was created
+    assert not (temp_dir / ".commit_craft" / "COMMITCRAFT_PR.md").exists()
 
 
-def test_pr_description_no_test_files_and_fallback_summary(temp_dir: Path):
-    """Test generating PR description when no test files are touched and no plan summary is provided."""
+def test_pr_description_no_test_files_and_custom_path(temp_dir: Path):
+    """Test generating individual PR description when no test files are touched and saving with custom path."""
     u1 = ChangeUnit(
         id="U001",
         path="src/main.py",
@@ -123,19 +128,20 @@ def test_pr_description_no_test_files_and_fallback_summary(temp_dir: Path):
         ordered_groups=[g1],
     )
 
-    md = PRDescriptionGenerator.generate_markdown(plan, execution_res, inventory)
-    assert "This pull request structures 1 change unit(s) into 1 logical, cohesive commit(s)." in md
-    assert "Suggested verification steps based on modified test files" not in md
+    prs = PRDescriptionGenerator.generate_individual_prs(plan, execution_res, inventory)
+    assert len(prs) == 1
+    assert "refactor: update main entrypoint" in prs["G01"]
+    assert "Suggested verification steps based on modified test files" not in prs["G01"]
 
-    # Custom file path saving
+    # Custom single file path saving
     custom_output = temp_dir / "my_pr.md"
-    saved = PRDescriptionGenerator.save_pr_description(md, temp_dir, custom_path=custom_output)
-    assert saved == custom_output
-    assert saved.is_file()
+    saved = PRDescriptionGenerator.save_individual_prs(prs, custom_path=custom_output)
+    assert saved == [custom_output]
+    assert custom_output.is_file()
 
 
 def test_pr_description_breaking_changes():
-    """Test that breaking change commits are highlighted prominently in PR description."""
+    """Test that breaking change commits are highlighted prominently in individual PR description."""
     u1 = ChangeUnit(
         id="U001",
         path="src/api.py",
@@ -159,12 +165,20 @@ def test_pr_description_breaking_changes():
         message="feat(api)!: remove deprecated v1 endpoints",
     )
     plan = PlanProposal(groups=[g1])
-    md = PRDescriptionGenerator.generate_markdown(plan, None, [u1])
+    md = PRDescriptionGenerator.generate_group_markdown(
+        group=g1,
+        commit_sha=None,
+        inventory=[u1],
+        plan=plan,
+        branch_name="feat/api-breaking-change",
+    )
 
-    assert "## ⚠ Breaking Changes" in md
+    assert "### ⚠ Breaking Changes" in md
+    assert "BREAKING CHANGE: Remove deprecated v1 endpoints" in md
     assert "Breaking API overhaul" in md
     assert "Remove deprecated v1 endpoints" in md
     assert "`class ApiHandler`" in md
+    assert "- `BREAKING-CHANGE: Remove deprecated v1 endpoints`" in md
 
 
 def test_generate_group_markdown_individual():
@@ -183,6 +197,14 @@ def test_generate_group_markdown_individual():
         patch_text="",
         context_info="def verify_jwt",
     )
+    g0 = CommitGroupProposal(
+        id="G00",
+        unit_ids=[],
+        title="Initial auth",
+        explanation="setup auth",
+        commit_type="feat",
+        message="feat(auth): initial auth setup",
+    )
     g1 = CommitGroupProposal(
         id="G01",
         unit_ids=["U001"],
@@ -193,7 +215,7 @@ def test_generate_group_markdown_individual():
         message="feat(auth): enforce secure JWT checks",
         depends_on=["G00"],
     )
-    plan = PlanProposal(groups=[g1])
+    plan = PlanProposal(groups=[g0, g1])
 
     md = PRDescriptionGenerator.generate_group_markdown(
         group=g1,
@@ -207,17 +229,21 @@ def test_generate_group_markdown_individual():
     assert "## PR Title (Conventional Commit)" in md
     assert "## PR Body (Conventional Commit Style)" in md
     assert "Enforce secure JWT checks" in md
-    assert "- **Group ID**: `G01`" in md
     assert "- **Type**: `feat` (scope: `auth`)" in md
     assert "- **Dedicated Branch**: `feat/auth-jwt-validation`" in md
     assert "- **Commit**: `abcd1234`: feat(auth): enforce secure JWT checks" in md
-    assert "- **Prerequisites**: Depends on group(s) `G00`" in md
+    assert "Depends on `feat(auth): initial auth setup`" in md
     assert "## Conventional Commit Footers" in md
-    assert "`Depends-On: G00`" in md
+    assert "`Depends-On: feat(auth): initial auth setup`" in md
     assert "`Branch: feat/auth-jwt-validation`" in md
     assert "`src/auth.py`" in md
     assert "`def verify_jwt`" in md
     assert "Stacked PR" in md
+    # Ensure internal CommitCraft IDs (unit ID, group ID) are NOT rendered in PR description
+    assert "Group ID" not in md
+    assert "G01" not in md
+    assert "G00" not in md
+    assert "[U001]" not in md
 
 
 def test_generate_individual_prs_and_save_to_subfolder(temp_dir: Path):
@@ -307,9 +333,9 @@ def test_generate_individual_prs_and_save_to_subfolder(temp_dir: Path):
     assert pr_g01_file.read_text(encoding="utf-8") == prs["G01"]
     assert pr_g02_file.read_text(encoding="utf-8") == prs["G02"]
 
-    # Summary file in .commit_craft/ should also exist
+    # Ensure unified summary file does NOT exist
     summary_file = temp_dir / ".commit_craft" / "COMMITCRAFT_PR.md"
-    assert summary_file.is_file()
+    assert not summary_file.exists()
 
 
 def test_save_individual_prs_custom_directory_and_file_mode(temp_dir: Path):
@@ -331,8 +357,10 @@ def test_save_individual_prs_custom_directory_and_file_mode(temp_dir: Path):
     # 2. Custom file target with multiple groups
     custom_file = temp_dir / "export_pr.md"
     saved_files = PRDescriptionGenerator.save_individual_prs(prs, git_dir, custom_path=custom_file)
+    assert len(saved_files) == 2
     assert (temp_dir / "export_pr_G01.md").is_file()
     assert (temp_dir / "export_pr_G02.md").is_file()
-    assert custom_file.is_file()
+    # Ensure unified file does not exist
+    assert not custom_file.exists()
 
 
