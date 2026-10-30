@@ -2,7 +2,7 @@
 
 from pathlib import Path
 import subprocess
-from typing import Optional
+from typing import Optional, Union
 from commitcraft.errors import GitCommandError
 
 
@@ -17,7 +17,7 @@ class GitRunner:
         self,
         args: list[str],
         env_override: Optional[dict[str, str]] = None,
-        input_data: Optional[bytes] = None,
+        input_data: Optional[Union[bytes, str]] = None,
         check: bool = True,
         cwd: Optional[Path] = None,
     ) -> subprocess.CompletedProcess[str]:
@@ -35,15 +35,29 @@ class GitRunner:
         if env_override:
             env.update(env_override)
 
+        input_bytes: Optional[bytes] = None
+        if input_data is not None:
+            if isinstance(input_data, bytes):
+                input_bytes = input_data
+            else:
+                input_bytes = str(input_data).encode("utf-8")
+
         try:
-            result = subprocess.run(
+            raw_result = subprocess.run(
                 full_cmd,
-                input=input_data.decode("utf-8", errors="replace") if input_data else None,
+                input=input_bytes,
                 capture_output=True,
-                text=True,
                 check=False,
                 timeout=self.timeout,
                 env=env,
+            )
+            stdout_str = raw_result.stdout.decode("utf-8", errors="replace") if raw_result.stdout else ""
+            stderr_str = raw_result.stderr.decode("utf-8", errors="replace") if raw_result.stderr else ""
+            result = subprocess.CompletedProcess(
+                args=raw_result.args,
+                returncode=raw_result.returncode,
+                stdout=stdout_str,
+                stderr=stderr_str,
             )
         except subprocess.TimeoutExpired as e:
             raise GitCommandError(
