@@ -163,3 +163,60 @@ def test_empty_group_rejected():
 
     errors = PlanValidator.validate(plan, inventory)
     assert any("contains no change units" in e for e in errors)
+
+
+def test_duplicate_group_id_rejected():
+    """Test that duplicate group identifiers report validation errors."""
+    u1 = make_unit("U001")
+    u2 = make_unit("U002")
+    inventory = [u1, u2]
+
+    plan = PlanProposal(
+        groups=[
+            CommitGroupProposal(
+                id="G01",
+                unit_ids=["U001"],
+                title="G1 First",
+                explanation="First",
+                commit_type="feat",
+                message="feat: first",
+            ),
+            CommitGroupProposal(
+                id="G01",  # Duplicate ID
+                unit_ids=["U002"],
+                title="G1 Second",
+                explanation="Second",
+                commit_type="feat",
+                message="feat: second",
+            ),
+        ]
+    )
+
+    errors = PlanValidator.validate(plan, inventory)
+    assert any("Duplicate group identifier 'G01'" in e for e in errors)
+
+
+def test_assert_valid_raises_plan_validation_error():
+    """Test that assert_valid raises PlanValidationError with formatted errors."""
+    u1 = make_unit("U001")
+    inventory = [u1]
+
+    # Empty unit_ids
+    plan = PlanProposal(
+        groups=[
+            CommitGroupProposal(
+                id="G01",
+                unit_ids=[],
+                title="G1",
+                explanation="Exp",
+                commit_type="feat",
+                message="feat: msg",
+            )
+        ]
+    )
+
+    with pytest.raises(PlanValidationError) as exc_info:
+        PlanValidator.assert_valid(plan, inventory)
+    assert "Plan validation failed with" in str(exc_info.value)
+    assert "contains no change units" in str(exc_info.value)
+

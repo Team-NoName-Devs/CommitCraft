@@ -109,3 +109,42 @@ def test_empty_diff_parsing():
     assert units == []
     units = DiffParser.parse("   ")
     assert units == []
+
+
+def test_make_excerpt_truncation():
+    """Test that make_excerpt properly truncates long excerpts by lines and characters."""
+    from commitcraft.diff_parser import make_excerpt
+
+    # 1. More than 10 meaningful lines
+    long_diff = "\n".join([f"+line {i}" for i in range(25)])
+    excerpt = make_excerpt(long_diff, max_lines=5)
+    assert len(excerpt.splitlines()) == 5
+
+    # 2. Character truncation (> 600 chars)
+    very_long_line = "+" + "A" * 700
+    char_excerpt = make_excerpt(very_long_line, max_chars=100)
+    assert "... [truncated]" in char_excerpt
+    assert len(char_excerpt) <= 120
+
+
+def test_binary_file_diff_parsing(test_repo: git.Repo):
+    """Test parsing binary file diff into a non-splittable binary ChangeUnit."""
+    repo_dir = Path(test_repo.working_tree_dir)
+    bin_file = repo_dir / "image.png"
+    # Write arbitrary non-text bytes
+    bin_file.write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01")
+
+    inspector = RepositoryInspector(repo_dir)
+    repo, runner, state = inspector.inspect()
+    engine = SnapshotEngine(repo, runner, state)
+    snapshot = engine.capture_snapshot()
+
+    units = DiffParser.parse(snapshot.diff_text)
+    assert len(units) == 1
+    unit = units[0]
+    assert unit.path == "image.png"
+    assert unit.is_binary is True
+    assert unit.kind == "binary"
+    assert not unit.is_splittable
+    assert "[Binary content]" in unit.excerpt
+
