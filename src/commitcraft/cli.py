@@ -5,9 +5,12 @@ from pathlib import Path
 import sys
 from typing import Optional
 import typer
-from rich.console import Console
+from rich import box
+from rich.console import Console, Group
+from rich.panel import Panel
 from rich.prompt import Confirm, Prompt
 from rich.table import Table
+from rich.text import Text
 
 from commitcraft.config import AppConfig, REQUIRED_MODEL
 from commitcraft.dependencies import DependencyResolver
@@ -28,10 +31,13 @@ from commitcraft.review import PlanEditor, ReviewUI
 from commitcraft.snapshot import SnapshotEngine
 
 
+__version__ = "0.1.0"
+
 app = typer.Typer(
     name="commitcraft",
     help="Turn a messy Git working tree into logical, reviewable commits with local AI.",
     no_args_is_help=True,
+    rich_markup_mode="rich",
 )
 console = Console()
 
@@ -39,10 +45,56 @@ hook_app = typer.Typer(help="Manage optional CommitCraft advisory Git hooks.")
 app.add_typer(hook_app, name="hook")
 
 
+def show_version() -> None:
+    """Display CommitCraft version and runtime diagnostic information."""
+    info_table = Table(box=box.ROUNDED, show_header=False, border_style="cyan")
+    info_table.add_column("Property", style="bold cyan", width=22)
+    info_table.add_column("Value", style="white")
+
+    info_table.add_row("CommitCraft Version", f"[bold green]{__version__}[/bold green]")
+    info_table.add_row("Python Version", sys.version.split()[0])
+    info_table.add_row("Required Model", f"[cyan]{REQUIRED_MODEL}[/cyan] (via Ollama)")
+    info_table.add_row("License", "MIT")
+    info_table.add_row("Repository", "https://github.com/Team-NoName-Devs/CommitCraft")
+
+    console.print(
+        Panel(
+            info_table,
+            title="[bold cyan]CommitCraft ✦ AI-Powered Semantic Commit Splitter[/bold cyan]",
+            subtitle="Local • Private • Tree-Verified",
+            border_style="cyan",
+            box=box.ROUNDED,
+            expand=False,
+        )
+    )
+
+
+def version_callback(value: bool) -> None:
+    """Typer callback for --version / -v flag."""
+    if value:
+        show_version()
+        raise typer.Exit(code=0)
+
+
 @app.callback()
-def main_callback() -> None:
+def main_callback(
+    version: Optional[bool] = typer.Option(
+        None,
+        "--version",
+        "-v",
+        help="Show CommitCraft version and exit.",
+        callback=version_callback,
+        is_eager=True,
+    ),
+) -> None:
     """CommitCraft: Logical, reviewable commits with local AI."""
     pass
+
+
+@app.command(name="version")
+def version_cmd() -> None:
+    """Display CommitCraft version and runtime diagnostic information."""
+    show_version()
 
 
 @app.command()
@@ -65,21 +117,39 @@ def inspect(
         console.print(f"[bold green]✔[/bold green] Active Branch:   [cyan]{state.branch_name}[/cyan] ({state.branch_ref})")
         console.print(f"[bold green]✔[/bold green] HEAD Commit:     [yellow]{state.head_commit[:8]}[/yellow]")
 
-        status_table = Table(title="Working Tree Changes", box=None)
-        status_table.add_column("Category", style="bold")
+        status_table = Table(title="Working Tree Changes", box=box.ROUNDED)
+        status_table.add_column("Category", style="bold cyan", width=12)
         status_table.add_column("Files", justify="left")
 
-        status_table.add_row("Staged", f"{len(state.staged_files)}: {', '.join(state.staged_files[:5]) or 'None'}")
-        status_table.add_row("Unstaged", f"{len(state.unstaged_files)}: {', '.join(state.unstaged_files[:5]) or 'None'}")
-        status_table.add_row("Untracked", f"{len(state.untracked_files)}: {', '.join(state.untracked_files[:5]) or 'None'}")
+        staged_display = f"{len(state.staged_files)}: {', '.join(state.staged_files[:5]) or 'None'}"
+        if len(state.staged_files) > 5:
+            staged_display += f" (+{len(state.staged_files) - 5} more)"
+
+        unstaged_display = f"{len(state.unstaged_files)}: {', '.join(state.unstaged_files[:5]) or 'None'}"
+        if len(state.unstaged_files) > 5:
+            unstaged_display += f" (+{len(state.unstaged_files) - 5} more)"
+
+        untracked_display = f"{len(state.untracked_files)}: {', '.join(state.untracked_files[:5]) or 'None'}"
+        if len(state.untracked_files) > 5:
+            untracked_display += f" (+{len(state.untracked_files) - 5} more)"
+
+        status_table.add_row("Staged", staged_display)
+        status_table.add_row("Unstaged", unstaged_display)
+        status_table.add_row("Untracked", untracked_display)
         console.print(status_table)
+
+        total_changes = len(state.staged_files) + len(state.unstaged_files) + len(state.untracked_files)
+        if total_changes > 0:
+            console.print(
+                "[dim]💡 Run [bold white]commitcraft split[/bold white] to analyze and group changes into logical commits.[/dim]\n"
+            )
 
     except CommitCraftError as e:
         console.print(f"[bold red]✘ Repository check failed:[/bold red] {e}")
         raise typer.Exit(code=1)
 
     # 2. Ollama & model inspection
-    console.print("\n[bold cyan]Ollama Runtime Status[/bold cyan]")
+    console.print("[bold cyan]Ollama Runtime Status[/bold cyan]")
     client = OllamaClient(
         base_url=config.ollama_base_url,
         connect_timeout=config.connect_timeout,
@@ -89,6 +159,7 @@ def inspect(
         client.check_health()
         console.print(f"[bold green]✔[/bold green] Endpoint: [white]{config.ollama_base_url}[/white] (Connected)")
         console.print(f"[bold green]✔[/bold green] Required Model: [cyan]{REQUIRED_MODEL}[/cyan] (Available)")
+        console.print("[bold green]● Ready[/bold green] [dim]— Local AI planner is operational.[/dim]\n")
     except ModelUnavailableError as e:
         console.print(f"[bold red]✘ Ollama unavailable:[/bold red] {e}")
         if e.resolution:
@@ -123,6 +194,20 @@ def config_cmd(
     console.print(f"  Read Timeout:     [white]{cfg.read_timeout}s[/white]")
     console.print(f"  Max Corrections:  [white]{cfg.max_correction_attempts}[/white]")
 
+    cfg_table = Table(box=box.ROUNDED, show_header=True, header_style="bold cyan", border_style="dim")
+    cfg_table.add_column("Setting", style="bold white", width=20)
+    cfg_table.add_column("Value", style="cyan")
+    cfg_table.add_column("Env Variable Override", style="dim")
+
+    cfg_table.add_row("Ollama Base URL", cfg.ollama_base_url, "COMMITCRAFT_OLLAMA_URL")
+    cfg_table.add_row("Required Model", cfg.model, "Fixed (llama3.2:3b)")
+    cfg_table.add_row("Connect Timeout", f"{cfg.connect_timeout}s", "COMMITCRAFT_CONNECT_TIMEOUT")
+    cfg_table.add_row("Read Timeout", f"{cfg.read_timeout}s", "COMMITCRAFT_READ_TIMEOUT")
+    cfg_table.add_row("Max Corrections", str(cfg.max_correction_attempts), "COMMITCRAFT_MAX_CORRECTIONS")
+
+    console.print("\n[bold]Configuration Overview Table:[/bold]")
+    console.print(cfg_table)
+
 
 @hook_app.command("install")
 def hook_install(
@@ -134,6 +219,7 @@ def hook_install(
     mgr = HookManager(root / ".git")
     hook_file = mgr.install()
     console.print(f"[bold green]✔ Advisory Git pre-commit hook installed at {hook_file}[/bold green]")
+    console.print("[dim]The hook advises when >3 files are staged simultaneously to prevent accidental monolithic commits.[/dim]")
 
 
 @hook_app.command("remove")
@@ -160,6 +246,12 @@ def split(
     ),
     custom_pr_path: Optional[str] = typer.Option(
         None, "--pr-output", help="Optional custom path for generated PR markdown"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Simulate planning and preflight verification without writing commits"
+    ),
+    show_diffs: bool = typer.Option(
+        False, "--diff", "-d", help="Display full unified diffs for change units in plan"
     ),
 ) -> None:
     """Analyze working tree and interactively split into logical commits."""
@@ -198,6 +290,10 @@ def split(
 
     console.print(f"Extracted [bold green]{len(units)}[/bold green] change unit(s) across target changes.")
 
+    if show_diffs:
+        console.print("\n[bold cyan]Diff Inspection for Extracted Units:[/bold cyan]")
+        ui.display_diff(units)
+
     # 4. Mandatory Ollama AI planner
     ollama_client = OllamaClient(
         base_url=app_config.ollama_base_url,
@@ -217,113 +313,227 @@ def split(
     executor = PlanExecutor(repo, runner, snapshot_engine)
 
     # 5. Interactive review and editing loop
-    while True:
-        try:
-            ordered_groups = DependencyResolver.resolve_order(plan.groups)
-        except Exception as e:
-            ordered_groups = plan.groups
+    try:
+        while True:
+            try:
+                ordered_groups = DependencyResolver.resolve_order(plan.groups)
+            except Exception:
+                ordered_groups = plan.groups
 
-        preflight = executor.preflight_replay(ordered_groups, units, snapshot)
-        ui.display_plan(plan, units, preflight)
+            preflight = executor.preflight_replay(ordered_groups, units, snapshot)
+            ui.display_plan(plan, units, preflight)
 
-        if auto_approve:
-            if not preflight.tree_equality:
-                console.print(f"[bold red]Preflight failed: {preflight.error_message}[/bold red]")
-                raise typer.Exit(code=1)
-            confirmed = True
-            break
+            if dry_run:
+                if not preflight.tree_equality:
+                    console.print(f"[bold red]Preflight failed: {preflight.error_message}[/bold red]")
+                    raise typer.Exit(code=1)
+                console.print("\n[bold cyan]══════════════ DRY-RUN COMPLETE ══════════════[/bold cyan]")
+                console.print("[bold green]✔ All preflight replays succeeded and tree equality verified![/bold green]")
+                console.print("[dim]Dry-run mode active. No commits were written or installed to the Git branch.[/dim]")
+                pr_preview = PRDescriptionGenerator.generate_markdown(plan, None, units)
+                console.print(
+                    Panel(
+                        pr_preview[:600] + ("\n... [truncated preview]" if len(pr_preview) > 600 else ""),
+                        title="[bold cyan]PR Description Preview[/bold cyan]",
+                        border_style="cyan",
+                        box=box.ROUNDED,
+                    )
+                )
+                raise typer.Exit(code=0)
 
-        # Menu options
-        console.print("\n[bold]Options:[/bold]")
-        console.print("  [1] Approve & Execute commits")
-        console.print("  [2] Move a unit between groups")
-        console.print("  [3] Merge two groups")
-        console.print("  [4] Split a group")
-        console.print("  [5] Edit group commit message")
-        console.print("  [6] Edit group dependencies")
-        console.print("  [7] Request fresh AI proposal")
-        console.print("  [0] Abort")
-
-        choice = Prompt.ask("\nEnter choice", choices=["1", "2", "3", "4", "5", "6", "7", "0"], default="1")
-
-        if choice == "0":
-            console.print("[yellow]Operation aborted by user. Working tree and branch untouched.[/yellow]")
-            raise typer.Exit(code=0)
-
-        elif choice == "1":
-            if not preflight.tree_equality:
-                console.print(f"[bold red]Cannot execute: Preflight failed ({preflight.error_message}). Fix plan first.[/bold red]")
-                continue
-
-            # Section 9.6: Require explicit confirmation, default to declining
-            confirmed = Confirm.ask(
-                f"\nAre you sure you want to install {len(ordered_groups)} commit(s) on branch '{state.branch_name}'?",
-                default=False,
-            )
-            if confirmed:
+            if auto_approve:
+                if not preflight.tree_equality:
+                    console.print(f"[bold red]Preflight failed: {preflight.error_message}[/bold red]")
+                    raise typer.Exit(code=1)
+                confirmed = True
                 break
-            else:
-                console.print("[yellow]Execution cancelled. Returning to plan menu.[/yellow]")
 
-        elif choice == "2":
-            uid = Prompt.ask("Unit ID to move (e.g. U001)")
-            from_g = Prompt.ask("Source Group ID (e.g. G01)")
-            to_g = Prompt.ask("Target Group ID (e.g. G02)")
-            try:
-                plan = PlanEditor.move_unit(plan, uid, from_g, to_g, units)
-                console.print("[green]Unit moved successfully.[/green]")
-            except PlanValidationError as e:
-                console.print(f"[bold red]Edit rejected:[/bold red] {e}")
+            # Polished interactive menu
+            menu_table = Table(box=box.ROUNDED, show_header=False, border_style="cyan", padding=(0, 1))
+            menu_table.add_column("Key", style="bold cyan", width=8)
+            menu_table.add_column("Action", style="bold white", width=22)
+            menu_table.add_column("Description", style="dim")
 
-        elif choice == "3":
-            src = Prompt.ask("Source Group ID to merge from (e.g. G02)")
-            tgt = Prompt.ask("Target Group ID to merge into (e.g. G01)")
-            try:
-                plan = PlanEditor.merge_groups(plan, src, tgt, units)
-                console.print("[green]Groups merged successfully.[/green]")
-            except PlanValidationError as e:
-                console.print(f"[bold red]Merge rejected:[/bold red] {e}")
+            menu_table.add_row("[1/a]", "Approve & Execute", "Verify preflight and install commits to branch")
+            menu_table.add_row("[2/m]", "Move Unit", "Reassign a change unit to another group")
+            menu_table.add_row("[3/g]", "Merge Groups", "Combine two groups into one commit")
+            menu_table.add_row("[4/s]", "Split Group", "Carve out units into a new commit group")
+            menu_table.add_row("[5/e]", "Edit Message/Title", "Update Conventional Commit message or title")
+            menu_table.add_row("[6/d]", "Edit Dependencies", "Update prerequisite groups for ordering")
+            menu_table.add_row("[7/r]", "Regenerate Plan", "Request a fresh proposal from local Ollama model")
+            menu_table.add_row("[8/v]", "View Diff", "Inspect syntax-highlighted diffs of units or groups")
+            menu_table.add_row("[0/q]", "Abort", "Exit safely without touching Git state")
 
-        elif choice == "4":
-            grp = Prompt.ask("Group ID to split (e.g. G01)")
-            new_id = Prompt.ask("New Group ID (e.g. G03)")
-            uids_str = Prompt.ask("Unit IDs for new group (comma-separated, e.g. U002, U003)")
-            uids = [u.strip() for u in uids_str.split(",") if u.strip()]
-            new_title = Prompt.ask("New group title")
-            new_type = Prompt.ask("Conventional commit type (feat, fix, refactor, test, docs, etc.)", default="feat")
-            new_msg = Prompt.ask("Commit message (e.g. 'feat: new feature')")
-            try:
-                plan = PlanEditor.split_group(plan, grp, new_id, uids, new_title, new_msg, new_type, units)
-                console.print("[green]Group split successfully.[/green]")
-            except PlanValidationError as e:
-                console.print(f"[bold red]Split rejected:[/bold red] {e}")
+            console.print("\n[bold]Options:[/bold]")
+            console.print(menu_table)
 
-        elif choice == "5":
-            grp = Prompt.ask("Group ID to edit (e.g. G01)")
-            new_msg = Prompt.ask("New Conventional Commit message")
-            try:
-                plan = PlanEditor.edit_message(plan, grp, new_msg, units)
-                console.print("[green]Commit message updated successfully.[/green]")
-            except PlanValidationError as e:
-                console.print(f"[bold red]Edit rejected:[/bold red] {e}")
+            raw_choice = Prompt.ask(
+                "\nEnter choice",
+                choices=["1", "2", "3", "4", "5", "6", "7", "8", "0", "a", "m", "g", "s", "e", "d", "r", "v", "q"],
+                default="1",
+            ).strip().lower()
 
-        elif choice == "6":
-            grp = Prompt.ask("Group ID to update dependencies for (e.g. G02)")
-            deps_str = Prompt.ask("Prerequisite group IDs (comma-separated, or empty for none)", default="")
-            deps = [d.strip() for d in deps_str.split(",") if d.strip()]
-            try:
-                plan = PlanEditor.set_dependencies(plan, grp, deps, units)
-                console.print("[green]Dependencies updated successfully.[/green]")
-            except PlanValidationError as e:
-                console.print(f"[bold red]Update rejected:[/bold red] {e}")
+            key_map = {
+                "a": "1",
+                "m": "2",
+                "g": "3",
+                "s": "4",
+                "e": "5",
+                "d": "6",
+                "r": "7",
+                "v": "8",
+                "q": "0",
+            }
+            choice = key_map.get(raw_choice, raw_choice)
 
-        elif choice == "7":
-            with console.status(f"[cyan]Requesting fresh proposal from {REQUIRED_MODEL}...[/cyan]"):
+            if choice == "0":
+                console.print("[yellow]Operation aborted by user. Working tree and branch untouched.[/yellow]")
+                raise typer.Exit(code=0)
+
+            elif choice == "1":
+                if not preflight.tree_equality:
+                    console.print(f"[bold red]Cannot execute: Preflight failed ({preflight.error_message}). Fix plan first.[/bold red]")
+                    continue
+
+                # Section 9.6: Require explicit confirmation, default to declining
+                confirmed = Confirm.ask(
+                    f"\nAre you sure you want to install {len(ordered_groups)} commit(s) on branch '{state.branch_name}'?",
+                    default=False,
+                )
+                if confirmed:
+                    break
+                else:
+                    console.print("[yellow]Execution cancelled. Returning to plan menu.[/yellow]")
+
+            elif choice == "2":
+                uid = Prompt.ask("Unit ID to move (e.g. U001, or 'cancel')").strip()
+                if not uid or uid.lower() in ("c", "cancel"):
+                    console.print("[yellow]Move cancelled.[/yellow]")
+                    continue
+
+                current_grp = next(
+                    (g for g in plan.groups if uid.upper() in g.unit_ids or uid in g.unit_ids), None
+                )
+                actual_uid = uid.upper() if (current_grp and uid.upper() in current_grp.unit_ids) else uid
+
+                from_g_default = current_grp.id if current_grp else "G01"
+                from_g = Prompt.ask(f"Source Group ID (e.g. {from_g_default})", default=from_g_default).strip()
+                if not from_g or from_g.lower() in ("c", "cancel"):
+                    console.print("[yellow]Move cancelled.[/yellow]")
+                    continue
+
+                avail_targets = [g.id for g in plan.groups if g.id != from_g]
+                to_default = avail_targets[0] if avail_targets else "G02"
+                to_g = Prompt.ask(f"Target Group ID (e.g. {to_default})", default=to_default).strip()
+                if not to_g or to_g.lower() in ("c", "cancel"):
+                    console.print("[yellow]Move cancelled.[/yellow]")
+                    continue
+
                 try:
-                    plan = planner.plan(units)
-                    console.print("[green]Fresh plan generated from local AI model.[/green]")
-                except CommitCraftError as e:
-                    console.print(f"[bold red]AI Planning Failed:[/bold red] {e}")
+                    plan = PlanEditor.move_unit(plan, actual_uid, from_g, to_g, units)
+                    console.print(f"[bold green]✔ Unit {actual_uid} moved from {from_g} to {to_g} successfully.[/bold green]")
+                except PlanValidationError as e:
+                    console.print(f"[bold red]Edit rejected:[/bold red] {e}")
+
+            elif choice == "3":
+                console.print(f"Available groups: {', '.join(f'[{g.id}: {g.title}]' for g in plan.groups)}")
+                src = Prompt.ask("Source Group ID to merge from (e.g. G02)").strip()
+                if not src or src.lower() in ("c", "cancel"):
+                    continue
+                tgt = Prompt.ask("Target Group ID to merge into (e.g. G01)").strip()
+                if not tgt or tgt.lower() in ("c", "cancel"):
+                    continue
+                try:
+                    plan = PlanEditor.merge_groups(plan, src, tgt, units)
+                    console.print(f"[bold green]✔ Groups {src} merged into {tgt} successfully.[/bold green]")
+                except PlanValidationError as e:
+                    console.print(f"[bold red]Merge rejected:[/bold red] {e}")
+
+            elif choice == "4":
+                console.print(f"Available groups: {', '.join(f'[{g.id}: {g.title}]' for g in plan.groups)}")
+                grp = Prompt.ask("Group ID to split (e.g. G01)").strip()
+                if not grp or grp.lower() in ("c", "cancel"):
+                    continue
+
+                target_grp = next((g for g in plan.groups if g.id == grp), None)
+                if target_grp:
+                    console.print(f"Change units currently in {grp}: {', '.join(target_grp.unit_ids)}")
+
+                existing_ids = [g.id for g in plan.groups]
+                next_num = 1
+                while f"G{next_num:02d}" in existing_ids:
+                    next_num += 1
+                suggested_new_id = f"G{next_num:02d}"
+
+                new_id = Prompt.ask(f"New Group ID", default=suggested_new_id).strip()
+                uids_str = Prompt.ask("Unit IDs for new group (comma-separated, e.g. U002, U003)").strip()
+                uids = [u.strip() for u in uids_str.split(",") if u.strip()]
+                new_title = Prompt.ask("New group title").strip()
+                new_type = Prompt.ask("Conventional commit type (feat, fix, refactor, test, docs, etc.)", default="feat").strip()
+                suggested_msg = f"{new_type}: {new_title.lower()}" if new_title else "feat: new feature"
+                new_msg = Prompt.ask("Commit message", default=suggested_msg).strip()
+                try:
+                    plan = PlanEditor.split_group(plan, grp, new_id, uids, new_title, new_msg, new_type, units)
+                    console.print(f"[bold green]✔ Group {new_id} split from {grp} successfully.[/bold green]")
+                except PlanValidationError as e:
+                    console.print(f"[bold red]Split rejected:[/bold red] {e}")
+
+            elif choice == "5":
+                console.print(f"Available groups: {', '.join(f'[{g.id}: {g.title}]' for g in plan.groups)}")
+                grp = Prompt.ask("Group ID to edit (e.g. G01)").strip()
+                if not grp or grp.lower() in ("c", "cancel"):
+                    continue
+
+                target_grp = next((g for g in plan.groups if g.id == grp), None)
+                default_msg = target_grp.message if target_grp else ""
+                new_msg = Prompt.ask("New Conventional Commit message", default=default_msg).strip()
+                try:
+                    plan = PlanEditor.edit_message(plan, grp, new_msg, units)
+                    console.print("[bold green]✔ Commit message updated successfully.[/bold green]")
+                except PlanValidationError as e:
+                    console.print(f"[bold red]Edit rejected:[/bold red] {e}")
+
+            elif choice == "6":
+                console.print(f"Available groups: {', '.join(f'[{g.id}: {g.title}]' for g in plan.groups)}")
+                grp = Prompt.ask("Group ID to update dependencies for (e.g. G02)").strip()
+                if not grp or grp.lower() in ("c", "cancel"):
+                    continue
+
+                target_grp = next((g for g in plan.groups if g.id == grp), None)
+                default_deps = ", ".join(target_grp.depends_on) if target_grp and target_grp.depends_on else ""
+                deps_str = Prompt.ask("Prerequisite group IDs (comma-separated, or empty for none)", default=default_deps).strip()
+                deps = [d.strip() for d in deps_str.split(",") if d.strip()]
+                try:
+                    plan = PlanEditor.set_dependencies(plan, grp, deps, units)
+                    console.print("[bold green]✔ Dependencies updated successfully.[/bold green]")
+                except PlanValidationError as e:
+                    console.print(f"[bold red]Update rejected:[/bold red] {e}")
+
+            elif choice == "7":
+                with console.status(f"[cyan]Requesting fresh proposal from {REQUIRED_MODEL}...[/cyan]"):
+                    try:
+                        plan = planner.plan(units)
+                        console.print("[bold green]✔ Fresh plan generated from local AI model.[/bold green]")
+                    except CommitCraftError as e:
+                        console.print(f"[bold red]AI Planning Failed:[/bold red] {e}")
+
+            elif choice == "8":
+                target_inspect = Prompt.ask("Enter Unit ID (e.g. U001), Group ID (e.g. G01), or 'all' to view diffs").strip()
+                if target_inspect.lower() == "all":
+                    ui.display_diff(units)
+                elif target_inspect.upper() in [g.id for g in plan.groups]:
+                    grp_match = next(g for g in plan.groups if g.id == target_inspect.upper())
+                    grp_units = [u for u in units if u.id in grp_match.unit_ids]
+                    ui.display_diff(grp_units)
+                elif any(u.id == target_inspect.upper() for u in units):
+                    matching_unit = next(u for u in units if u.id == target_inspect.upper())
+                    ui.display_diff([matching_unit])
+                else:
+                    console.print(f"[yellow]Unit or group '{target_inspect}' not found.[/yellow]")
+
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Operation aborted by user. Working tree and branch untouched.[/yellow]")
+        raise typer.Exit(code=0)
 
     # 6. Execute commit construction and guarded branch update
     try:
@@ -349,7 +559,26 @@ def split(
         custom_path=Path(custom_pr_path) if custom_pr_path else None,
     )
     console.print(f"\n[bold green]✔ PR Description generated and saved to:[/bold green] [white]{pr_path}[/white]")
+    console.print(
+        Panel(
+            f"[bold green]CommitCraft successfully created {len(exec_res.created_commits)} logical commit(s).[/bold green]\n"
+            f"[dim]• Run [bold white]git log -n {len(exec_res.created_commits)}[/bold white] to review your clean history.\n"
+            f"• Review the generated PR description at [bold white]{pr_path}[/bold white].[/dim]",
+            border_style="green",
+            box=box.ROUNDED,
+            expand=False,
+        )
+    )
+
+
+def main() -> None:
+    """CLI entrypoint with safe interrupt handling."""
+    try:
+        app()
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Operation aborted by user.[/yellow]")
+        sys.exit(0)
 
 
 if __name__ == "__main__":
-    app()
+    main()

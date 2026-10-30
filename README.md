@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: >=3.11](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Model: llama3.2:3b](https://img.shields.io/badge/Ollama-llama3.2%3A3b-orange)](https://ollama.com/library/llama3.2)
-[![Tests: 128 passed](https://img.shields.io/badge/tests-128%20passed-brightgreen)](tests/)
+[![Tests: 133 passed](https://img.shields.io/badge/tests-133%20passed-brightgreen)](tests/)
 
 ---
 
@@ -139,18 +139,26 @@ Ollama Runtime Status
 Analyzes working changes, requests semantic grouping from Ollama, enables interactive review, verifies tree equality, and installs real Git commits:
 
 ```bash
+# Interactive mode with rich proposal review
 commitcraft split
+
+# Dry-run mode: verify plan & preflight without altering Git history
+commitcraft split --dry-run
+
+# Split with unified diffs displayed alongside plan
+commitcraft split --diff
 ```
 
-#### Interactive Review Options:
-- **[1] Approve & Execute**: Runs preflight, verifies tree equality, and prompts for explicit confirmation.
-- **[2] Move a unit**: Reassign a change unit from one group to another.
-- **[3] Merge groups**: Combine two groups into one cohesive commit.
-- **[4] Split group**: Carve out specific change units into a new commit group.
-- **[5] Edit message**: Revise Conventional Commit message with syntax validation.
-- **[6] Edit dependencies**: Add or update prerequisite dependencies between groups.
-- **[7] Request fresh AI proposal**: Re-prompt Ollama for an alternative grouping.
-- **[0] Abort**: Cancel the operation without touching Git state.
+#### Interactive Review Options & Shortcuts:
+- **[1 / a] Approve & Execute**: Runs preflight, verifies tree equality, and prompts for explicit confirmation.
+- **[2 / m] Move a unit**: Reassign a change unit between groups with auto-detected source group.
+- **[3 / g] Merge groups**: Combine two groups into one cohesive commit.
+- **[4 / s] Split group**: Carve out specific change units into a new commit group with auto-suggested IDs.
+- **[5 / e] Edit message/title**: Revise Conventional Commit message or title with prefilled current defaults.
+- **[6 / d] Edit dependencies**: Add or update prerequisite dependencies between groups.
+- **[7 / r] Request fresh AI proposal**: Re-prompt Ollama for an alternative grouping.
+- **[8 / v] View Diff**: Inspect syntax-highlighted unified diff of any unit, group, or all changes.
+- **[0 / q] Abort**: Cancel the operation safely without touching Git state.
 
 ### 8.3 Configuration (`commitcraft config`)
 

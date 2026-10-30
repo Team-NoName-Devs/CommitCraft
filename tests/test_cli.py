@@ -277,3 +277,80 @@ def test_cli_split_interactive_abort(test_repo: git.Repo, cli_runner: CliRunner,
     assert "Operation aborted by user" in result.stdout
     # Head and working tree must be untouched
     assert test_repo.head.commit.hexsha == original_head
+
+
+def test_cli_version_flag_and_command(cli_runner: CliRunner):
+    """Test --version and version command outputs."""
+    res_flag = cli_runner.invoke(app, ["--version"])
+    assert res_flag.exit_code == 0
+    assert "CommitCraft Version" in res_flag.stdout
+    assert "0.1.0" in res_flag.stdout
+
+    res_cmd = cli_runner.invoke(app, ["version"])
+    assert res_cmd.exit_code == 0
+    assert "CommitCraft Version" in res_cmd.stdout
+    assert "llama3.2:3b" in res_cmd.stdout
+
+
+def test_cli_split_dry_run(test_repo: git.Repo, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch):
+    """Test commitcraft split --dry-run verifies tree and prints preview without writing commits."""
+    repo_dir = Path(test_repo.working_tree_dir)
+    original_head = test_repo.head.commit.hexsha
+    (repo_dir / "dry_run_test.py").write_text("x = 100\n", encoding="utf-8")
+
+    monkeypatch.setattr(OllamaClient, "check_health", lambda self: None)
+
+    def mock_plan(self, inventory):
+        return PlanProposal(
+            groups=[
+                CommitGroupProposal(
+                    id="G01",
+                    unit_ids=[inventory[0].id],
+                    title="Dry run change",
+                    explanation="Dry run test",
+                    commit_type="feat",
+                    message="feat: dry run change",
+                )
+            ]
+        )
+
+    monkeypatch.setattr(SemanticPlanner, "plan", mock_plan)
+
+    result = cli_runner.invoke(app, ["split", "--repo", str(repo_dir), "--dry-run"])
+    assert result.exit_code == 0
+    assert "DRY-RUN COMPLETE" in result.stdout
+    assert "tree equality verified" in result.stdout
+    assert "PR Description Preview" in result.stdout
+    # Head must remain untouched!
+    assert test_repo.head.commit.hexsha == original_head
+
+
+def test_cli_split_interactive_letter_shortcut_abort(test_repo: git.Repo, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch):
+    """Test typing 'q' (letter shortcut for abort) cleanly cancels operation."""
+    repo_dir = Path(test_repo.working_tree_dir)
+    original_head = test_repo.head.commit.hexsha
+    (repo_dir / "shortcut_test.txt").write_text("shortcut\n", encoding="utf-8")
+
+    monkeypatch.setattr(OllamaClient, "check_health", lambda self: None)
+
+    def mock_plan(self, inventory):
+        return PlanProposal(
+            groups=[
+                CommitGroupProposal(
+                    id="G01",
+                    unit_ids=[inventory[0].id],
+                    title="Shortcut",
+                    explanation="Shortcut",
+                    commit_type="chore",
+                    message="chore: test shortcut",
+                )
+            ]
+        )
+
+    monkeypatch.setattr(SemanticPlanner, "plan", mock_plan)
+
+    result = cli_runner.invoke(app, ["split", "--repo", str(repo_dir)], input="q\n")
+    assert result.exit_code == 0
+    assert "Operation aborted by user" in result.stdout
+    assert test_repo.head.commit.hexsha == original_head
+

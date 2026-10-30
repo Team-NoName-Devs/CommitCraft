@@ -18,11 +18,14 @@ class PRDescriptionGenerator:
     def generate_markdown(
         cls,
         plan: PlanProposal,
-        execution_res: ExecutionResult,
+        execution_res: Optional[ExecutionResult],
         inventory: list[ChangeUnit],
     ) -> str:
         """Compose the PR markdown text."""
         unit_map = {u.id: u for u in inventory}
+
+        ordered_groups = execution_res.ordered_groups if execution_res else plan.groups
+        created_commits = execution_res.created_commits if execution_res else ["(dry-run)"] * len(ordered_groups)
 
         lines: list[str] = [
             "# Pull Request Description",
@@ -36,7 +39,7 @@ class PRDescriptionGenerator:
         else:
             lines.append(
                 f"This pull request structures {len(inventory)} change unit(s) "
-                f"into {len(execution_res.created_commits)} logical, cohesive commit(s)."
+                f"into {len(created_commits)} logical, cohesive commit(s)."
             )
         lines.append("")
 
@@ -44,7 +47,7 @@ class PRDescriptionGenerator:
             "## Key Changes",
             "",
         ])
-        for group in execution_res.ordered_groups:
+        for group in ordered_groups:
             lines.append(f"### {group.title}")
             lines.append(f"- **Type**: `{group.commit_type}`" + (f" (scope: `{group.scope}`)" if group.scope else ""))
             lines.append(f"- **Rationale**: {group.explanation}")
@@ -63,8 +66,9 @@ class PRDescriptionGenerator:
             "## Commits",
             "",
         ])
-        for commit_sha, group in zip(execution_res.created_commits, execution_res.ordered_groups):
-            lines.append(f"- `{commit_sha[:8]}`: {group.message}")
+        for commit_sha, group in zip(created_commits, ordered_groups):
+            sha_disp = commit_sha[:8] if len(commit_sha) >= 8 else commit_sha
+            lines.append(f"- `{sha_disp}`: {group.message}")
         lines.append("")
 
         # Testing Performed
