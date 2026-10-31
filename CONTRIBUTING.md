@@ -22,21 +22,49 @@ Thank you for your interest in contributing to **CommitCraft**! We welcome contr
 - **Git**: `>= 2.30`
 - **uv**: Recommended fast package installer (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
 - **Ollama**: [Download Ollama](https://ollama.com) and pull `llama3.2:3b`
+- **GitHub CLI (`gh`)**: Needed for automatically sending pull requests (`gh auth login`)
 
 ### Installation
 
+Clone the repository:
 ```bash
-# Clone the repository
 git clone https://github.com/Team-NoName-Devs/CommitCraft.git
 cd CommitCraft
-
-# Create virtual environment with Python 3.12
-uv venv --python 3.12
-source .venv/bin/activate
-
-# Install editable package with development dependencies
-uv pip install -e ".[dev]"
 ```
+
+#### Windows
+- **PowerShell with `uv` (Recommended)**:
+  ```powershell
+  uv venv --python 3.12
+  .venv\Scripts\Activate.ps1
+  uv pip install -e ".[dev]"
+  ```
+- **PowerShell with standard `venv`**:
+  ```powershell
+  python -m venv .venv
+  .venv\Scripts\Activate.ps1
+  pip install -e ".[dev]"
+  ```
+- **Command Prompt (`cmd.exe`)**:
+  ```cmd
+  python -m venv .venv
+  .venv\Scripts\activate.bat
+  pip install -e ".[dev]"
+  ```
+
+#### Linux & macOS
+- **Using `uv` (Recommended)**:
+  ```bash
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install -e ".[dev]"
+  ```
+- **Using standard `venv`**:
+  ```bash
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -e ".[dev]"
+  ```
 
 ---
 

@@ -59,49 +59,198 @@ flowchart TD
 
 ## 5. Prerequisites & System Requirements
 
-- **Operating System**: Linux, macOS, or Windows (WSL recommended on Windows).
+CommitCraft requires the following core dependencies across all platforms:
 - **Python**: `>= 3.11` (Python 3.12 recommended).
-- **Git**: Installed and accessible in system `PATH`.
-- **Ollama**: Local AI runner.
-- **Model**: `llama3.2:3b`.
+- **Git**: `>= 2.30` installed and accessible in system `PATH`.
+- **Ollama**: Local AI runner with `llama3.2:3b` model downloaded.
+- **GitHub CLI (`gh`)**: **Needed for automatically sending pull requests** to your remote repository. After installing `gh`, run `gh auth login` to authenticate. *(If `gh` is not installed, CommitCraft will still generate Git branches and save local PR Markdown descriptions in `.commit_craft/prs/`, but cannot open pull requests automatically on GitHub).*
+
+### System Package Setup
+
+#### Windows
+Install prerequisites using [winget](https://learn.microsoft.com/en-us/windows/package-manager/winget/) or standalone installers:
+```powershell
+# Using winget in PowerShell:
+winget install --id Git.Git -e --source winget
+winget install --id Python.Python.3.12 -e --source winget
+winget install --id GitHub.cli -e --source winget
+
+# Authenticate GitHub CLI (needed for automatic PR sending)
+gh auth login
+```
+> [!TIP]
+> **WSL2 Recommendation**: CommitCraft runs smoothly on both native Windows (PowerShell / Command Prompt) and **Windows Subsystem for Linux (WSL2 / Ubuntu)**. If using WSL2, follow the Linux instructions below.
+
+#### Linux
+Install Git, Python 3.11+, and curl via your distribution's package manager:
+
+- **Ubuntu / Debian**:
+  ```bash
+  sudo apt update
+  sudo apt install -y git python3 python3-pip python3-venv curl gh
+  gh auth login   # Needed for automatic PR sending
+  ```
+- **Fedora / RHEL**:
+  ```bash
+  sudo dnf install -y git python3 python3-pip curl gh
+  gh auth login   # Needed for automatic PR sending
+  ```
+- **Arch Linux**:
+  ```bash
+  sudo pacman -S --noconfirm git python python-pip curl github-cli
+  gh auth login   # Needed for automatic PR sending
+  ```
+
+#### macOS
+Install prerequisites using [Homebrew](https://brew.sh/):
+```bash
+brew install git python@3.12 curl gh
+gh auth login   # Needed for automatic PR sending
+```
 
 ---
 
 ## 6. Ollama Setup
 
-Install and launch Ollama, then pull the mandatory model:
+CommitCraft requires a local [Ollama](https://ollama.com) runtime with the mandatory `llama3.2:3b` model. There is no cloud API fallback. Follow the setup steps for your platform:
 
-```bash
-# 1. Start Ollama service (if not already running)
-ollama serve
+### Windows
 
-# 2. Pull the required Llama 3.2 3B Instruct model
-ollama pull llama3.2:3b
+1. **Install Ollama**:
+   - Download the installer from [ollama.com/download/windows](https://ollama.com/download/windows), or install via `winget`:
+     ```powershell
+     winget install Ollama.Ollama
+     ```
+2. **Start the Service**:
+   - Launch the Ollama application from the Start Menu or System Tray (runs in the background), or run in a terminal:
+     ```powershell
+     ollama serve
+     ```
+3. **Pull Model & Verify**:
+   ```powershell
+   ollama pull llama3.2:3b
+   curl.exe -s http://localhost:11434/api/tags | Select-String llama3.2:3b
+   ```
 
-# 3. Verify availability
-curl -s http://localhost:11434/api/tags | grep llama3.2:3b
-```
+### Linux
+
+1. **Install Ollama**:
+   ```bash
+   curl -fsSL https://ollama.com/install.sh | sh
+   ```
+2. **Start the Service**:
+   - On systemd distributions, the service starts automatically:
+     ```bash
+     sudo systemctl status ollama
+     # If stopped:
+     sudo systemctl start ollama
+     ```
+   - Or start manually in a terminal:
+     ```bash
+     ollama serve
+     ```
+3. **Pull Model & Verify**:
+   ```bash
+   ollama pull llama3.2:3b
+   curl -s http://localhost:11434/api/tags | grep llama3.2:3b
+   ```
+
+### macOS
+
+1. **Install Ollama**:
+   - Download the macOS app from [ollama.com/download/mac](https://ollama.com/download/mac), or install via Homebrew:
+     ```bash
+     brew install --cask ollama
+     ```
+2. **Start the Service**:
+   - Open **Ollama** from Applications (it stays active in your menu bar), or start via terminal:
+     ```bash
+     ollama serve
+     ```
+3. **Pull Model & Verify**:
+   ```bash
+   ollama pull llama3.2:3b
+   curl -s http://localhost:11434/api/tags | grep llama3.2:3b
+   ```
 
 ---
 
 ## 7. Installation
 
-Install CommitCraft using `uv` or `pip`:
+Clone the CommitCraft repository:
 
 ```bash
-# Clone the repository
 git clone https://github.com/Team-NoName-Devs/CommitCraft.git
 cd CommitCraft
+```
 
-# Create and activate virtual environment
+Next, create a virtual environment and install the package using the instructions for your platform:
+
+### Windows
+
+#### Using `uv` (Recommended - PowerShell)
+```powershell
+# Install uv if needed: powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 uv venv --python 3.12
-source .venv/bin/activate
-
-# Install in editable mode with development dependencies
+.venv\Scripts\Activate.ps1
 uv pip install -e ".[dev]"
 ```
 
-Verify installation:
+#### Standard `venv` & `pip`
+- **PowerShell**:
+  ```powershell
+  # If script execution is restricted, run: Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+  python -m venv .venv
+  .venv\Scripts\Activate.ps1
+  pip install -e ".[dev]"
+  ```
+- **Command Prompt (`cmd.exe`)**:
+  ```cmd
+  python -m venv .venv
+  .venv\Scripts\activate.bat
+  pip install -e ".[dev]"
+  ```
+
+### Linux
+
+#### Using `uv` (Recommended)
+```bash
+# Install uv if needed: curl -LsSf https://astral.sh/uv/install.sh | sh
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install -e ".[dev]"
+```
+
+#### Standard `venv` & `pip`
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+### macOS
+
+#### Using `uv` (Recommended)
+```bash
+# Install uv if needed: brew install uv
+uv venv --python 3.12
+source .venv/bin/activate
+uv pip install -e ".[dev]"
+```
+
+#### Standard `venv` & `pip`
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+---
+
+### Verify Installation (All Platforms)
+
+Verify that the CLI executable is available in your PATH:
+
 ```bash
 commitcraft --help
 ```
@@ -161,6 +310,14 @@ commitcraft split --diff
 - **[7 / r] Request fresh AI proposal**: Re-prompt Ollama for an alternative grouping.
 - **[8 / v] View Diff**: Inspect syntax-highlighted unified diff of any unit, group, or all changes.
 - **[0 / q] Abort**: Cancel the operation safely without touching Git state.
+
+#### Automatic Branching & Pull Request Submission
+Once approved, CommitCraft creates dedicated Git branches for each group and generates editable PR descriptions in `.commit_craft/prs/`. It then offers to push the branches and submit pull requests:
+```text
+Do you want to send pull request(s) to the base branch 'main'?
+```
+> [!NOTE]
+> **GitHub CLI (`gh`) Needed**: To automatically push branches and open pull requests against your base branch via `gh pr create`, you must have **GitHub CLI (`gh`)** installed and authenticated (`gh auth login`). If `gh` is missing, CommitCraft safely leaves the branches in your local repository and preserves the full Markdown PR files in `.commit_craft/prs/` for manual submission.
 
 ### 8.3 Configuration (`commitcraft config`)
 
