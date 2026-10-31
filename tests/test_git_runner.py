@@ -166,3 +166,31 @@ def test_git_runner_executable_not_found(test_repo: git.Repo, monkeypatch: pytes
     assert exc_info.value.exit_code == -1
     assert "Git executable not found in PATH" in exc_info.value.stderr
     assert "Install Git" in exc_info.value.resolution
+
+
+def test_git_runner_get_remotes_and_push(test_repo: git.Repo, temp_dir: Path):
+    """Test get_remotes and push methods on GitRunner."""
+    runner = GitRunner(Path(test_repo.working_tree_dir))
+
+    # Initially no remotes
+    assert runner.get_remotes() == []
+
+    # Create a bare remote repo
+    bare_remote_dir = temp_dir / "bare_remote.git"
+    git.Repo.init(bare_remote_dir, bare=True)
+
+    # Add remote
+    test_repo.create_remote("origin", str(bare_remote_dir))
+    assert runner.get_remotes() == ["origin"]
+
+    # Create a new local branch
+    runner.run(["branch", "feat/my-branch"])
+
+    # Push to bare remote
+    push_res = runner.push("origin", "feat/my-branch", set_upstream=True)
+    assert push_res.returncode == 0
+
+    # Verify bare remote received the branch
+    bare_repo = git.Repo(bare_remote_dir)
+    assert "feat/my-branch" in [h.name for h in bare_repo.heads]
+

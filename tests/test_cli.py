@@ -418,3 +418,311 @@ def test_cli_split_creates_individual_prs_and_branches(
     assert "Prerequisites" in pr2_text
 
 
+def test_cli_split_interactive_pr_sending_accepted(
+    test_repo: git.Repo, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """Test interactive prompt asking whether to send PR to base branch when accepted."""
+    import subprocess
+    import tempfile
+    import shutil
+    repo_dir = Path(test_repo.working_tree_dir)
+
+    # Set up remote in separate temp dir outside repo
+    bare_dir = Path(tempfile.mkdtemp(prefix="bare_remote_"))
+    try:
+        git.Repo.init(bare_dir, bare=True)
+        test_repo.create_remote("origin", str(bare_dir))
+
+        # Add changes
+        (repo_dir / "feature.py").write_text("def run(): pass\n", encoding="utf-8")
+
+        monkeypatch.setattr(OllamaClient, "check_health", lambda self: None)
+
+        def mock_plan(self, inventory):
+            unit = inventory[0]
+            return PlanProposal(
+                summary="Feature proposal",
+                groups=[
+                    CommitGroupProposal(
+                        id="G01",
+                        unit_ids=[unit.id],
+                        title="Feature run",
+                        explanation="Run logic",
+                        commit_type="feat",
+                        scope="core",
+                        message="feat(core): add run feature",
+                        depends_on=[],
+                    )
+                ],
+            )
+
+        monkeypatch.setattr(SemanticPlanner, "plan", mock_plan)
+        monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/gh" if cmd == "gh" else None)
+
+        orig_run = subprocess.run
+        created_prs = []
+
+        def mock_subprocess_run(cmd, *args, **kwargs):
+            if cmd[0] == "gh":
+                head = cmd[cmd.index("--head") + 1]
+                base = cmd[cmd.index("--base") + 1]
+                created_prs.append((head, base))
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=0,
+                    stdout="https://github.com/Team-NoName-Devs/CommitCraft/pull/101\n",
+                    stderr="",
+                )
+            return orig_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+
+        # Inputs:
+        # 1: Approve & Execute
+        # y: Confirm installation to branch 'main'
+        # y: Send pull request(s) to base branch 'main'
+        result = cli_runner.invoke(
+            app,
+            ["split", "--repo", str(repo_dir)],
+            input="1\ny\ny\n",
+        )
+
+        assert result.exit_code == 0
+        assert "Do you want to send pull request(s) to the base branch 'main'?" in result.stdout
+        assert "Pushing 1 branch(es) to remote 'origin' and creating pull request(s)" in result.stdout
+        assert "Pushed branch:" in result.stdout
+        assert "PR Created:" in result.stdout
+        assert "https://github.com/Team-NoName-Devs/CommitCraft/pull/101" in result.stdout
+        assert len(created_prs) == 1
+        assert created_prs[0][1] == "main"
+
+        # Verify branch pushed to bare remote
+        bare_repo = git.Repo(bare_dir)
+        branch_names = [h.name for h in bare_repo.heads]
+        assert any("core" in b or "feat" in b for b in branch_names)
+    finally:
+        shutil.rmtree(bare_dir, ignore_errors=True)
+
+
+def test_cli_split_interactive_pr_sending_declined(
+    test_repo: git.Repo, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """Test interactive prompt asking whether to send PR when declined."""
+    import subprocess
+    import tempfile
+    import shutil
+    repo_dir = Path(test_repo.working_tree_dir)
+
+    bare_dir = Path(tempfile.mkdtemp(prefix="bare_remote_"))
+    try:
+        git.Repo.init(bare_dir, bare=True)
+        test_repo.create_remote("origin", str(bare_dir))
+
+        (repo_dir / "feature.py").write_text("def run(): pass\n", encoding="utf-8")
+
+        monkeypatch.setattr(OllamaClient, "check_health", lambda self: None)
+
+        def mock_plan(self, inventory):
+            unit = inventory[0]
+            return PlanProposal(
+                summary="Feature proposal",
+                groups=[
+                    CommitGroupProposal(
+                        id="G01",
+                        unit_ids=[unit.id],
+                        title="Feature run",
+                        explanation="Run logic",
+                        commit_type="feat",
+                        scope="core",
+                        message="feat(core): add run feature",
+                        depends_on=[],
+                    )
+                ],
+            )
+
+        monkeypatch.setattr(SemanticPlanner, "plan", mock_plan)
+        gh_called = []
+
+        def mock_subprocess_run(cmd, *args, **kwargs):
+            if cmd[0] == "gh":
+                gh_called.append(cmd)
+                return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+            return subprocess.run(cmd, *args, **kwargs)
+
+        # Inputs:
+        # 1: Approve & Execute
+        # y: Confirm install
+        # n: Decline sending PR
+        result = cli_runner.invoke(
+            app,
+            ["split", "--repo", str(repo_dir)],
+            input="1\ny\nn\n",
+        )
+
+        assert result.exit_code == 0
+        assert "Do you want to send pull request(s) to the base branch 'main'?" in result.stdout
+        assert "Pushing 1 branch(es)" not in result.stdout
+        assert len(gh_called) == 0
+    finally:
+        shutil.rmtree(bare_dir, ignore_errors=True)
+
+
+def test_cli_split_with_send_pr_flag(
+    test_repo: git.Repo, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """Test commitcraft split with --yes and --send-pr flags."""
+    import subprocess
+    import tempfile
+    import shutil
+    repo_dir = Path(test_repo.working_tree_dir)
+
+    bare_dir = Path(tempfile.mkdtemp(prefix="bare_remote_"))
+    try:
+        git.Repo.init(bare_dir, bare=True)
+        test_repo.create_remote("origin", str(bare_dir))
+
+        (repo_dir / "service.py").write_text("def svc(): pass\n", encoding="utf-8")
+
+        monkeypatch.setattr(OllamaClient, "check_health", lambda self: None)
+
+        def mock_plan(self, inventory):
+            unit = inventory[0]
+            return PlanProposal(
+                summary="Service proposal",
+                groups=[
+                    CommitGroupProposal(
+                        id="G01",
+                        unit_ids=[unit.id],
+                        title="Service",
+                        explanation="Service code",
+                        commit_type="feat",
+                        scope="svc",
+                        message="feat(svc): add service",
+                        depends_on=[],
+                    )
+                ],
+            )
+
+        monkeypatch.setattr(SemanticPlanner, "plan", mock_plan)
+        monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/gh" if cmd == "gh" else None)
+
+        orig_run = subprocess.run
+        created_prs = []
+
+        def mock_subprocess_run(cmd, *args, **kwargs):
+            if cmd[0] == "gh":
+                created_prs.append(cmd)
+                return subprocess.CompletedProcess(
+                    args=cmd,
+                    returncode=0,
+                    stdout="https://github.com/Team-NoName-Devs/CommitCraft/pull/200\n",
+                    stderr="",
+                )
+            return orig_run(cmd, *args, **kwargs)
+
+        monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+
+        result = cli_runner.invoke(
+            app,
+            ["split", "--repo", str(repo_dir), "--yes", "--send-pr", "--base", "main"],
+        )
+
+        assert result.exit_code == 0
+        assert "Pushing 1 branch(es) to remote 'origin'" in result.stdout
+        assert "https://github.com/Team-NoName-Devs/CommitCraft/pull/200" in result.stdout
+        assert len(created_prs) == 1
+    finally:
+        shutil.rmtree(bare_dir, ignore_errors=True)
+
+
+def test_cli_split_send_pr_gh_missing_warning(
+    test_repo: git.Repo, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """Test warning displayed when gh is missing and user asks to send PR."""
+    import tempfile
+    import shutil
+    repo_dir = Path(test_repo.working_tree_dir)
+
+    bare_dir = Path(tempfile.mkdtemp(prefix="bare_remote_"))
+    try:
+        git.Repo.init(bare_dir, bare=True)
+        test_repo.create_remote("origin", str(bare_dir))
+
+        (repo_dir / "service.py").write_text("def svc(): pass\n", encoding="utf-8")
+
+        monkeypatch.setattr(OllamaClient, "check_health", lambda self: None)
+
+        def mock_plan(self, inventory):
+            unit = inventory[0]
+            return PlanProposal(
+                summary="Service proposal",
+                groups=[
+                    CommitGroupProposal(
+                        id="G01",
+                        unit_ids=[unit.id],
+                        title="Service",
+                        explanation="Service code",
+                        commit_type="feat",
+                        scope="svc",
+                        message="feat(svc): add service",
+                        depends_on=[],
+                    )
+                ],
+            )
+
+        monkeypatch.setattr(SemanticPlanner, "plan", mock_plan)
+        monkeypatch.setattr("shutil.which", lambda cmd: None)
+
+        result = cli_runner.invoke(
+            app,
+            ["split", "--repo", str(repo_dir), "--yes", "--send-pr"],
+        )
+
+        assert result.exit_code == 0
+        assert "GitHub CLI ('gh') is not installed or not found in PATH" in result.stdout
+    finally:
+        shutil.rmtree(bare_dir, ignore_errors=True)
+
+
+
+def test_cli_split_send_pr_no_remote_warning(
+    test_repo: git.Repo, cli_runner: CliRunner, monkeypatch: pytest.MonkeyPatch
+):
+    """Test warning displayed when no remote is configured and user asks to send PR."""
+    repo_dir = Path(test_repo.working_tree_dir)
+
+    (repo_dir / "service.py").write_text("def svc(): pass\n", encoding="utf-8")
+
+    monkeypatch.setattr(OllamaClient, "check_health", lambda self: None)
+
+    def mock_plan(self, inventory):
+        unit = inventory[0]
+        return PlanProposal(
+            summary="Service proposal",
+            groups=[
+                CommitGroupProposal(
+                    id="G01",
+                    unit_ids=[unit.id],
+                    title="Service",
+                    explanation="Service code",
+                    commit_type="feat",
+                    scope="svc",
+                    message="feat(svc): add service",
+                    depends_on=[],
+                )
+            ],
+        )
+
+    monkeypatch.setattr(SemanticPlanner, "plan", mock_plan)
+    monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/gh")
+
+    result = cli_runner.invoke(
+        app,
+        ["split", "--repo", str(repo_dir), "--yes", "--send-pr"],
+    )
+
+    assert result.exit_code == 0
+    assert "No Git remote found in repository. Cannot push branches or send PRs" in result.stdout
+
+
+
