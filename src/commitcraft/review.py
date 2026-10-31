@@ -13,7 +13,7 @@ from commitcraft.change_units import ChangeUnit
 from commitcraft.dependencies import DependencyResolver
 from commitcraft.errors import PlanValidationError
 from commitcraft.executor import PreflightResult
-from commitcraft.schemas import CommitGroupProposal, PlanProposal
+from commitcraft.schemas import CommitGroupProposal, PlanProposal, parse_conventional_commit
 from commitcraft.validator import PlanValidator
 
 
@@ -114,12 +114,14 @@ class PlanEditor:
         if not orig.unit_ids:
             raise PlanValidationError("Cannot split all units out; original group would be empty.")
 
+        parsed_type, parsed_scope, _, _ = parse_conventional_commit(new_message.strip())
         new_grp = CommitGroupProposal(
             id=new_group_id,
             unit_ids=unit_ids_for_new,
             title=new_title,
             explanation=f"Split from {group_id}",
-            commit_type=new_commit_type,
+            commit_type=parsed_type or new_commit_type,
+            scope=parsed_scope,
             message=new_message,
             depends_on=[group_id],
         )
@@ -141,7 +143,13 @@ class PlanEditor:
         grp = next((g for g in new_plan.groups if g.id == group_id), None)
         if not grp:
             raise PlanValidationError(f"Group {group_id} not found.")
-        grp.message = new_message.strip()
+
+        clean_msg = new_message.strip()
+        parsed_type, parsed_scope, _, _ = parse_conventional_commit(clean_msg)
+        if parsed_type:
+            grp.commit_type = parsed_type
+            grp.scope = parsed_scope
+        grp.message = clean_msg
 
         PlanValidator.assert_valid(new_plan, inventory)
         return new_plan

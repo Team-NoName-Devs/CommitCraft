@@ -280,3 +280,100 @@ def test_modify_before_add_rejected():
     errors = PlanValidator.validate(plan, inventory)
     assert any("before it is created" in e for e in errors)
 
+
+def test_pure_test_group_as_feat_rejected():
+    """Verify group containing only tests with commit_type feat is flagged."""
+    u_test = ChangeUnit(
+        id="U001",
+        path="tests/test_auth.py",
+        kind="add",
+        summary="Add tests",
+        hunk_header=None,
+        added_lines=10,
+        removed_lines=0,
+        is_binary=False,
+        is_splittable=False,
+        excerpt="+def test_auth(): pass",
+        patch_text="",
+        type_hint="test",
+    )
+    plan = PlanProposal(
+        groups=[
+            CommitGroupProposal(
+                id="G01",
+                unit_ids=["U001"],
+                title="Tests as feat",
+                explanation="Exp",
+                commit_type="feat",
+                message="feat: add tests",
+            )
+        ]
+    )
+    errors = PlanValidator.validate(plan, [u_test])
+    assert any("contains only test files but has commit_type 'feat'" in e for e in errors)
+
+
+def test_pure_docs_group_as_feat_rejected():
+    """Verify group containing only documentation with commit_type feat is flagged."""
+    u_doc = ChangeUnit(
+        id="U001",
+        path="docs/guide.md",
+        kind="add",
+        summary="Add guide",
+        hunk_header=None,
+        added_lines=10,
+        removed_lines=0,
+        is_binary=False,
+        is_splittable=False,
+        excerpt="+# Guide",
+        patch_text="",
+        type_hint="docs",
+    )
+    plan = PlanProposal(
+        groups=[
+            CommitGroupProposal(
+                id="G01",
+                unit_ids=["U001"],
+                title="Docs as feat",
+                explanation="Exp",
+                commit_type="feat",
+                message="feat: add guide",
+            )
+        ]
+    )
+    errors = PlanValidator.validate(plan, [u_doc])
+    assert any("contains only documentation files but has commit_type 'feat'" in e for e in errors)
+
+
+def test_pure_ci_group_as_feat_rejected():
+    """Verify group containing only CI workflow files with commit_type feat is flagged."""
+    u_ci = ChangeUnit(
+        id="U001",
+        path=".github/workflows/ci.yml",
+        kind="add",
+        summary="Add CI workflow",
+        hunk_header=None,
+        added_lines=10,
+        removed_lines=0,
+        is_binary=False,
+        is_splittable=False,
+        excerpt="+name: CI",
+        patch_text="",
+        type_hint="ci",
+    )
+    plan = PlanProposal(
+        groups=[
+            CommitGroupProposal(
+                id="G01",
+                unit_ids=["U001"],
+                title="CI as feat",
+                explanation="Exp",
+                commit_type="feat",
+                message="feat: add ci workflow",
+            )
+        ]
+    )
+    errors = PlanValidator.validate(plan, [u_ci])
+    assert any("contains only CI workflow files but has commit_type 'feat'" in e for e in errors)
+
+

@@ -147,6 +147,8 @@ def test_plan_editor_edit_message():
     # Valid conventional commit message
     updated = PlanEditor.edit_message(plan, "G01", "fix(core): new valid message", inventory)
     assert updated.groups[0].message == "fix(core): new valid message"
+    assert updated.groups[0].commit_type == "fix"
+    assert updated.groups[0].scope == "core"
 
     # Invalid message format should raise PlanValidationError
     with pytest.raises(PlanValidationError):

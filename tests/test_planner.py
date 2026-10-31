@@ -248,3 +248,77 @@ def test_planner_with_repo_context():
     user_prompt = captured_messages[1]["content"]
     assert "feat/my-feature" in user_prompt
     assert "components" in user_prompt
+
+
+def test_reconcile_plan_types_and_scopes():
+    """Verify automatic refinement of semantic types and scopes."""
+    from commitcraft.planner import reconcile_plan_types_and_scopes
+    from commitcraft.schemas import CommitGroupProposal, PlanProposal
+
+    test_unit = ChangeUnit(
+        id="U001",
+        path="tests/test_planner.py",
+        kind="modify",
+        summary="Add tests",
+        hunk_header=None,
+        added_lines=10,
+        removed_lines=0,
+        is_binary=False,
+        is_splittable=False,
+        excerpt="+test",
+        patch_text="",
+        scope_hint="planner",
+        type_hint="test",
+    )
+    doc_unit = ChangeUnit(
+        id="U002",
+        path="README.md",
+        kind="modify",
+        summary="Update docs",
+        hunk_header=None,
+        added_lines=5,
+        removed_lines=0,
+        is_binary=False,
+        is_splittable=False,
+        excerpt="+doc",
+        patch_text="",
+        scope_hint="docs",
+        type_hint="docs",
+    )
+    inventory = [test_unit, doc_unit]
+
+    # Propose test group as feat with redundant scope test(test)
+    # Propose doc group as feat
+    plan = PlanProposal(
+        groups=[
+            CommitGroupProposal(
+                id="G01",
+                unit_ids=["U001"],
+                title="Add tests",
+                explanation="Unit tests",
+                commit_type="feat",
+                scope="test",
+                message="feat(test): add tests",
+            ),
+            CommitGroupProposal(
+                id="G02",
+                unit_ids=["U002"],
+                title="Update documentation",
+                explanation="README updates",
+                commit_type="feat",
+                message="feat: update documentation",
+            ),
+        ]
+    )
+
+    reconciled = reconcile_plan_types_and_scopes(plan, inventory)
+
+    g1 = next(g for g in reconciled.groups if g.id == "G01")
+    assert g1.commit_type == "test"
+    assert g1.scope == "planner"
+    assert g1.message == "test(planner): add tests"
+
+    g2 = next(g for g in reconciled.groups if g.id == "G02")
+    assert g2.commit_type == "docs"
+    assert g2.message == "docs: update documentation"
+

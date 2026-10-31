@@ -20,6 +20,7 @@ class ChangeUnit:
     excerpt: str
     patch_text: str  # Immutable native unified diff patch
     scope_hint: Optional[str] = None
+    type_hint: Optional[str] = None
     context_info: Optional[str] = None
 
     def to_prompt_dict(self) -> dict:
@@ -35,6 +36,8 @@ class ChangeUnit:
             "is_binary": self.is_binary,
             "excerpt": self.excerpt,
         }
+        if self.type_hint:
+            data["type_hint"] = self.type_hint
         if self.scope_hint:
             data["scope_hint"] = self.scope_hint
         if self.context_info:
