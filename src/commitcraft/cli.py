@@ -668,6 +668,17 @@ def split(
                                 pr_file_map[grp.id] = sp
                                 break
 
+                    # Clean PR markdown files and text for GitHub submission (strip title and body instructions)
+                    clean_prs: dict[str, str] = {
+                        grp.id: PRDescriptionGenerator.clean_pr_markdown_for_gh(prs[grp.id])
+                        for grp in exec_res.ordered_groups
+                        if grp.id in prs
+                    }
+                    for grp_id, clean_content in clean_prs.items():
+                        sp = pr_file_map.get(grp_id)
+                        if sp and sp.is_file():
+                            sp.write_text(clean_content, encoding="utf-8")
+
                     created_prs_count = 0
                     for grp, b_name in branches_to_submit:
                         # 1. Push branch to remote first
@@ -686,13 +697,14 @@ def split(
 
                         # 2. Create pull request via gh
                         pr_file = pr_file_map.get(grp.id)
+                        pr_body = clean_prs.get(grp.id, prs.get(grp.id))
                         with console.status(f"[cyan]Creating PR for '{b_name}' -> '{target_base}' via gh...[/cyan]"):
                             success, pr_url, err_msg = pr_sender.create_pr(
                                 branch_name=b_name,
                                 base_branch=target_base,
                                 title=grp.message,
                                 body_file=pr_file,
-                                body=prs.get(grp.id),
+                                body=pr_body,
                             )
 
                         if success:

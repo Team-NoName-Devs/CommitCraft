@@ -271,3 +271,59 @@ def test_pr_sender_push_and_create_prs(monkeypatch: pytest.MonkeyPatch, test_rep
     assert results[2].pushed is False
     assert results[2].pr_created is False
     assert "is the base branch" in results[2].error_message
+
+
+def test_pr_sender_create_pr_strips_title_and_body_instructions(
+    monkeypatch: pytest.MonkeyPatch, test_repo: git.Repo, temp_dir: Path
+):
+    """Test create_pr removes PR title instructions and body wrappers before sending via gh."""
+    runner = GitRunner(Path(test_repo.working_tree_dir))
+    sender = PRSender(Path(test_repo.working_tree_dir), runner)
+
+    monkeypatch.setattr("shutil.which", lambda cmd: "/usr/bin/gh")
+
+    raw_markdown = (
+        "# Pull Request Description: feat: add widget\n\n"
+        "## PR Title (Conventional Commit)\n\n"
+        "```text\nfeat: add widget\n```\n\n"
+        "## PR Body (Conventional Commit Style)\n\n"
+        "### Description\n\n"
+        "Core widget logic\n\n"
+        "## Key Changes\n\n"
+        "- Widget file\n\n"
+        "---\n"
+        "*Generated automatically by [CommitCraft](https://github.com/Team-NoName-Devs/CommitCraft).* "
+        "Please review and edit before opening your PR.\n"
+    )
+
+    pr_file = temp_dir / "PR_G01.md"
+    pr_file.write_text(raw_markdown, encoding="utf-8")
+
+    def mock_subprocess_run(cmd, *args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=cmd,
+            returncode=0,
+            stdout="https://github.com/Team-NoName-Devs/CommitCraft/pull/99\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+
+    success, pr_url, err = sender.create_pr(
+        branch_name="feat/widget",
+        base_branch="main",
+        title="feat: add widget",
+        body_file=pr_file,
+    )
+
+    assert success is True
+    assert pr_url == "https://github.com/Team-NoName-Devs/CommitCraft/pull/99"
+
+    # Verify instructions were removed from the file used by gh
+    cleaned_file_content = pr_file.read_text(encoding="utf-8")
+    assert "# Pull Request Description" not in cleaned_file_content
+    assert "## PR Title (Conventional Commit)" not in cleaned_file_content
+    assert "## PR Body (Conventional Commit Style)" not in cleaned_file_content
+    assert "Please review and edit before opening your PR" not in cleaned_file_content
+    assert "## Description\n\nCore widget logic" in cleaned_file_content
+

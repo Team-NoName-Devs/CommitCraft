@@ -364,3 +364,68 @@ def test_save_individual_prs_custom_directory_and_file_mode(temp_dir: Path):
     assert not custom_file.exists()
 
 
+def test_generate_group_markdown_for_gh():
+    """Test generating group PR markdown formatted for GitHub CLI submission."""
+    u1 = ChangeUnit(
+        id="U001",
+        path="src/auth.py",
+        kind="modify",
+        summary="Add JWT validation",
+        hunk_header="@@ -1,5 +1,10 @@",
+        added_lines=10,
+        removed_lines=2,
+        is_binary=False,
+        is_splittable=False,
+        excerpt="+def verify_jwt():",
+        patch_text="",
+        context_info="def verify_jwt",
+    )
+    g1 = CommitGroupProposal(
+        id="G01",
+        unit_ids=["U001"],
+        title="JWT validation",
+        explanation="Enforce secure JWT checks",
+        commit_type="feat",
+        scope="auth",
+        message="feat(auth): enforce secure JWT checks",
+        depends_on=[],
+    )
+    plan = PlanProposal(groups=[g1])
+
+    # 1. for_gh=True omits title instructions and body instruction wrapper
+    md_gh = PRDescriptionGenerator.generate_group_markdown(
+        group=g1,
+        commit_sha="abcd1234ef567890",
+        inventory=[u1],
+        plan=plan,
+        branch_name="feat/auth-jwt-validation",
+        for_gh=True,
+    )
+
+    assert "# Pull Request Description" not in md_gh
+    assert "## PR Title (Conventional Commit)" not in md_gh
+    assert "## PR Body (Conventional Commit Style)" not in md_gh
+    assert "Please review and edit before opening your PR" not in md_gh
+    assert "## Description\n\nEnforce secure JWT checks" in md_gh
+    assert "*Generated automatically by [CommitCraft](https://github.com/Team-NoName-Devs/CommitCraft).*" in md_gh
+
+    # 2. for_gh=False (default) preserves instructions for manual opening
+    md_manual = PRDescriptionGenerator.generate_group_markdown(
+        group=g1,
+        commit_sha="abcd1234ef567890",
+        inventory=[u1],
+        plan=plan,
+        branch_name="feat/auth-jwt-validation",
+        for_gh=False,
+    )
+    assert "# Pull Request Description: feat(auth): enforce secure JWT checks" in md_manual
+    assert "## PR Title (Conventional Commit)" in md_manual
+    assert "## PR Body (Conventional Commit Style)" in md_manual
+    assert "Please review and edit before opening your PR" in md_manual
+
+    # 3. clean_pr_markdown_for_gh converts manual markdown into gh-ready markdown
+    cleaned = PRDescriptionGenerator.clean_pr_markdown_for_gh(md_manual)
+    assert cleaned.strip() == md_gh.strip()
+
+
+

@@ -631,6 +631,17 @@ def test_cli_split_with_send_pr_flag(
         assert "Pushing 1 branch(es) to remote 'origin'" in result.stdout
         assert "https://github.com/Team-NoName-Devs/CommitCraft/pull/200" in result.stdout
         assert len(created_prs) == 1
+
+        # Verify PR markdown file on disk has title and description instructions removed
+        pr_file = repo_dir / ".commit_craft" / "prs" / "PR_G01.md"
+        assert pr_file.is_file()
+        pr_text = pr_file.read_text(encoding="utf-8")
+        assert "# Pull Request Description" not in pr_text
+        assert "## PR Title (Conventional Commit)" not in pr_text
+        assert "## PR Body (Conventional Commit Style)" not in pr_text
+        assert "Please review and edit before opening your PR" not in pr_text
+        assert "## Description" in pr_text
+        assert "Service code" in pr_text
     finally:
         shutil.rmtree(bare_dir, ignore_errors=True)
 

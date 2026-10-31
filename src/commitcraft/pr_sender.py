@@ -9,6 +9,7 @@ from typing import Optional
 
 from commitcraft.errors import PRSubmissionError
 from commitcraft.git_runner import GitRunner
+from commitcraft.pr_description import PRDescriptionGenerator
 from commitcraft.schemas import CommitGroupProposal
 
 
@@ -87,9 +88,14 @@ class PRSender:
         ]
 
         if body_file and Path(body_file).is_file():
+            content = Path(body_file).read_text(encoding="utf-8")
+            cleaned = PRDescriptionGenerator.clean_pr_markdown_for_gh(content)
+            if cleaned != content:
+                Path(body_file).write_text(cleaned, encoding="utf-8")
             cmd.extend(["--body-file", str(body_file)])
         elif body:
-            cmd.extend(["--body", body])
+            cleaned = PRDescriptionGenerator.clean_pr_markdown_for_gh(body)
+            cmd.extend(["--body", cleaned])
 
         try:
             res = subprocess.run(

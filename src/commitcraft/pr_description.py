@@ -1,6 +1,7 @@
 """Pull-request description generator for individual and modular commit groups."""
 
 from pathlib import Path
+import re
 from typing import Optional
 
 from commitcraft.change_units import ChangeUnit
@@ -16,6 +17,45 @@ class PRDescriptionGenerator:
     """Generates honest, structured, editable Markdown PR descriptions for individual commit groups."""
 
     @classmethod
+    def clean_pr_markdown_for_gh(cls, markdown: str) -> str:
+        """Strip PR title instructions and PR body instruction wrappers for GitHub PR creation.
+
+        When submitting via GitHub CLI (gh), the PR title is already supplied via --title,
+        and the PR is created directly on GitHub. This strips:
+        - The top-level '# Pull Request Description: ...' title
+        - '## PR Title (Conventional Commit)' and its code block
+        - '## PR Body (Conventional Commit Style)' instruction header
+        - Converts '### Description' to '## Description'
+        - Removes 'Please review and edit before opening your PR.' from the footer
+        """
+        text = markdown
+
+        # 1. Remove '# Pull Request Description(?:: ...)?'
+        text = re.sub(r"^#\s+Pull Request Description(?::[^\n]*)?\n*", "", text)
+
+        # 2. Remove '## PR Title (Conventional Commit)' and code block
+        text = re.sub(
+            r"##\s+PR Title\s*(?:\([^)]*\))?\s*\n+```[a-zA-Z0-9_-]*\s*\n[\s\S]*?\n```\n*",
+            "",
+            text,
+        )
+
+        # 3. Remove '## PR Body (Conventional Commit Style)'
+        text = re.sub(r"##\s+PR Body\s*(?:\([^)]*\))?\s*\n*", "", text)
+
+        # 4. Convert '### Description' to '## Description' if present
+        text = re.sub(r"^###\s+Description\b", "## Description", text, flags=re.MULTILINE)
+
+        # 5. Clean footer instruction
+        text = re.sub(
+            r"\s*Please review and edit before opening your PR\.?",
+            "",
+            text,
+        )
+
+        return text.strip() + "\n"
+
+    @classmethod
     def generate_group_markdown(
         cls,
         group: CommitGroupProposal,
@@ -23,8 +63,13 @@ class PRDescriptionGenerator:
         inventory: list[ChangeUnit],
         plan: Optional[PlanProposal] = None,
         branch_name: Optional[str] = None,
+        for_gh: bool = False,
     ) -> str:
-        """Compose individual PR markdown text for a specific commit group."""
+        """Compose individual PR markdown text for a specific commit group.
+
+        If for_gh is True, omits PR title instructions and body instruction wrapper,
+        formatting the markdown directly for GitHub PR creation.
+        """
         unit_map = {u.id: u for u in inventory}
         sha_disp = (
             commit_sha[:8]
@@ -32,22 +77,31 @@ class PRDescriptionGenerator:
             else (commit_sha or "(dry-run)")
         )
 
-        lines: list[str] = [
-            f"# Pull Request Description: {group.message}",
-            "",
-            "## PR Title (Conventional Commit)",
-            "",
-            "```text",
-            f"{group.message}",
-            "```",
-            "",
-            "## PR Body (Conventional Commit Style)",
-            "",
-            "### Description",
-            "",
-            group.explanation.strip(),
-            "",
-        ]
+        lines: list[str] = []
+        if for_gh:
+            lines.extend([
+                "## Description",
+                "",
+                group.explanation.strip(),
+                "",
+            ])
+        else:
+            lines.extend([
+                f"# Pull Request Description: {group.message}",
+                "",
+                "## PR Title (Conventional Commit)",
+                "",
+                "```text",
+                f"{group.message}",
+                "```",
+                "",
+                "## PR Body (Conventional Commit Style)",
+                "",
+                "### Description",
+                "",
+                group.explanation.strip(),
+                "",
+            ])
 
         is_breaking = (
             "!" in group.message.split(":")[0]
@@ -171,11 +225,18 @@ class PRDescriptionGenerator:
                 f"- **Stacked PR**: This branch depends on prerequisite changes ({dep_str}). "
                 "Please merge or base on prerequisites first."
             )
+        footer_msg = (
+            "*Generated automatically by [CommitCraft](https://github.com/Team-NoName-Devs/CommitCraft).*"
+            if for_gh
+            else (
+                "*Generated automatically by [CommitCraft](https://github.com/Team-NoName-Devs/CommitCraft).* "
+                "Please review and edit before opening your PR."
+            )
+        )
         lines.extend([
             "",
             "---",
-            "*Generated automatically by [CommitCraft](https://github.com/Team-NoName-Devs/CommitCraft).* "
-            "Please review and edit before opening your PR.",
+            footer_msg,
             "",
         ])
 
@@ -188,6 +249,7 @@ class PRDescriptionGenerator:
         execution_res: Optional[ExecutionResult],
         inventory: list[ChangeUnit],
         branch_names: Optional[dict[str, str]] = None,
+        for_gh: bool = False,
     ) -> dict[str, str]:
         """Generate a mapping of group_id -> PR markdown for every group in the plan."""
         ordered_groups = execution_res.ordered_groups if execution_res else plan.groups
@@ -207,6 +269,7 @@ class PRDescriptionGenerator:
                 inventory=inventory,
                 plan=plan,
                 branch_name=b_name,
+                for_gh=for_gh,
             )
         return prs
 
