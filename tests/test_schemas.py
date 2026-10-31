@@ -174,3 +174,63 @@ def test_commit_group_proposal_commit_type_resilience():
         message="feat(auth): message",
     )
     assert g2.commit_type == "feat"
+    assert g2.scope == "auth"
+
+
+def test_parse_conventional_commit():
+    """Verify parsing of conventional commit components."""
+    from commitcraft.schemas import parse_conventional_commit
+
+    t, s, b, d = parse_conventional_commit("feat(auth): add login endpoint")
+    assert t == "feat"
+    assert s == "auth"
+    assert b is False
+    assert d == "add login endpoint"
+
+    t, s, b, d = parse_conventional_commit("fix!: resolve crash on startup")
+    assert t == "fix"
+    assert s is None
+    assert b is True
+    assert d == "resolve crash on startup"
+
+    t, s, b, d = parse_conventional_commit("test(planner)!: breaking test changes")
+    assert t == "test"
+    assert s == "planner"
+    assert b is True
+    assert d == "breaking test changes"
+
+    t, s, b, d = parse_conventional_commit("not a conventional commit")
+    assert t is None
+    assert s is None
+
+
+def test_commit_group_proposal_redundant_scope_cleaned():
+    """Verify redundant scope matching commit type is cleaned."""
+    group = CommitGroupProposal(
+        id="G01",
+        unit_ids=["U001"],
+        title="Test group",
+        explanation="Exp",
+        commit_type="test",
+        scope="test",
+        message="test: add unit tests",
+    )
+    assert group.scope is None
+    assert group.commit_type == "test"
+    assert group.message == "test: add unit tests"
+
+
+def test_commit_group_proposal_sync_scope_into_message():
+    """Verify group scope is synchronized into message if omitted in message."""
+    group = CommitGroupProposal(
+        id="G01",
+        unit_ids=["U001"],
+        title="Auth feature",
+        explanation="Exp",
+        commit_type="feat",
+        scope="auth",
+        message="feat: implement login",
+    )
+    assert group.scope == "auth"
+    assert group.message == "feat(auth): implement login"
+

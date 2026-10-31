@@ -43,6 +43,90 @@ def infer_scope_hint(path: str) -> Optional[str]:
     return None
 
 
+def infer_type_hint(path: str, diff_text: str = "") -> Optional[str]:
+    """Infer a conventional commit type hint (feat, fix, test, docs, build, ci, chore, perf) from path and diff."""
+    p = Path(path)
+    parts = p.parts
+    stem = p.stem.lower()
+
+    # CI workflows and automation
+    if ".github" in parts or ".gitlab-ci.yml" in parts or "Jenkinsfile" in parts or ".circleci" in parts:
+        return "ci"
+
+    # Documentation
+    if p.suffix.lower() in (".md", ".rst", ".adoc") or "docs" in parts:
+        return "docs"
+    if stem in ("license", "contributing", "changelog", "authors"):
+        return "docs"
+
+    # Build and dependencies
+    if p.name in (
+        "pyproject.toml",
+        "setup.py",
+        "setup.cfg",
+        "package.json",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "Cargo.toml",
+        "Cargo.lock",
+        "go.mod",
+        "go.sum",
+        "Makefile",
+        "Dockerfile",
+        "docker-compose.yml",
+    ):
+        return "build"
+
+    # Tooling and repository housekeeping / config
+    if p.name in (
+        ".gitignore",
+        ".gitattributes",
+        ".env.example",
+        ".editorconfig",
+        "ruff.toml",
+        ".eslintrc",
+        ".prettierrc",
+        "tsconfig.json",
+    ):
+        return "chore"
+
+    # Tests
+    if (
+        "tests" in parts
+        or "test" in parts
+        or "spec" in parts
+        or stem.startswith("test_")
+        or stem.endswith("_test")
+        or stem.endswith("_spec")
+        or stem.endswith(".test")
+        or stem.endswith(".spec")
+    ):
+        return "test"
+
+    # Semantic analysis of diff content for bug fixes and performance
+    if diff_text:
+        added_lines = [
+            line[1:].strip().lower()
+            for line in diff_text.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        ]
+        added_text = " ".join(added_lines)
+
+        perf_terms = ("optimize", "performance", "cache", "latency", "benchmark", "speedup", "memoize")
+        if any(term in added_text for term in perf_terms):
+            return "perf"
+
+        fix_terms = (
+            "fix", "bug", "patch", "defect", "resolve", "workaround",
+            "exception", "error", "nullpointer", "nonecheck", "overflow",
+        )
+        if any(term in added_text for term in fix_terms):
+            return "fix"
+
+    return None
+
+
 def extract_context_info(hunk_header: Optional[str], section_header: Optional[str] = None) -> Optional[str]:
     """Extract class, function, or symbol context from hunk or section header."""
     if section_header and section_header.strip():
@@ -92,6 +176,7 @@ class DiffParser:
             if pf.is_binary_file:
                 unit_id = f"U{unit_counter:03d}"
                 unit_counter += 1
+                type_hint = infer_type_hint(clean_path, "")
                 units.append(
                     ChangeUnit(
                         id=unit_id,
@@ -106,6 +191,7 @@ class DiffParser:
                         excerpt="[Binary content]",
                         patch_text=str(pf),
                         scope_hint=scope_hint,
+                        type_hint=type_hint,
                         context_info=None,
                     )
                 )
@@ -119,6 +205,7 @@ class DiffParser:
                 if not patch_str.endswith("\n"):
                     patch_str += "\n"
                 summary = f"Create new file {clean_path}"
+                type_hint = infer_type_hint(clean_path, patch_str)
                 units.append(
                     ChangeUnit(
                         id=unit_id,
@@ -133,6 +220,7 @@ class DiffParser:
                         excerpt=make_excerpt(patch_str),
                         patch_text=patch_str,
                         scope_hint=scope_hint,
+                        type_hint=type_hint,
                         context_info=None,
                     )
                 )
@@ -146,6 +234,7 @@ class DiffParser:
                 if not patch_str.endswith("\n"):
                     patch_str += "\n"
                 summary = f"Delete file {clean_path}"
+                type_hint = infer_type_hint(clean_path, patch_str)
                 units.append(
                     ChangeUnit(
                         id=unit_id,
@@ -160,6 +249,7 @@ class DiffParser:
                         excerpt=make_excerpt(patch_str),
                         patch_text=patch_str,
                         scope_hint=scope_hint,
+                        type_hint=type_hint,
                         context_info=None,
                     )
                 )
@@ -182,6 +272,7 @@ class DiffParser:
 
                     ctx_suffix = f" in {context_info}" if context_info else f" (hunk {idx}/{hunk_count})"
                     summary = f"Update {clean_path}{ctx_suffix}"
+                    type_hint = infer_type_hint(clean_path, hunk_str)
 
                     units.append(
                         ChangeUnit(
@@ -197,6 +288,7 @@ class DiffParser:
                             excerpt=make_excerpt(hunk_str),
                             patch_text=header + hunk_str,
                             scope_hint=scope_hint,
+                            type_hint=type_hint,
                             context_info=context_info,
                         )
                     )
@@ -214,6 +306,7 @@ class DiffParser:
 
                 ctx_suffix = f" in {context_info}" if context_info else ""
                 summary = f"Update {clean_path}{ctx_suffix}"
+                type_hint = infer_type_hint(clean_path, patch_str)
 
                 units.append(
                     ChangeUnit(
@@ -229,6 +322,7 @@ class DiffParser:
                         excerpt=make_excerpt(str(hunk)),
                         patch_text=patch_str,
                         scope_hint=scope_hint,
+                        type_hint=type_hint,
                         context_info=context_info,
                     )
                 )
@@ -239,6 +333,7 @@ class DiffParser:
                 patch_str = str(pf)
                 if not patch_str.endswith("\n"):
                     patch_str += "\n"
+                type_hint = infer_type_hint(clean_path, patch_str)
                 units.append(
                     ChangeUnit(
                         id=unit_id,
@@ -253,6 +348,7 @@ class DiffParser:
                         excerpt=patch_str.strip(),
                         patch_text=patch_str,
                         scope_hint=scope_hint,
+                        type_hint=type_hint,
                         context_info=None,
                     )
                 )

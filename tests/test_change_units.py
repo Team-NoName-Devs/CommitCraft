@@ -93,3 +93,26 @@ def test_change_unit_with_scope_and_context():
     assert pdict["scope_hint"] == "planner"
     assert pdict["context_info"] == "def plan():"
 
+
+def test_change_unit_with_type_hint():
+    """Test ChangeUnit serializes type_hint when provided."""
+    unit = ChangeUnit(
+        id="U005",
+        path="tests/test_planner.py",
+        kind="modify",
+        summary="Update test_planner.py",
+        hunk_header=None,
+        added_lines=5,
+        removed_lines=1,
+        is_binary=False,
+        is_splittable=False,
+        excerpt="+test",
+        patch_text="",
+        scope_hint="planner",
+        type_hint="test",
+    )
+    pdict = unit.to_prompt_dict()
+    assert pdict["type_hint"] == "test"
+    assert pdict["scope_hint"] == "planner"
+
+

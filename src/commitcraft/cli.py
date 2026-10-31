@@ -312,6 +312,7 @@ def split(
         "unstaged_count": len(state.unstaged_files),
         "untracked_count": len(state.untracked_files),
         "components": sorted(list({u.scope_hint for u in units if u.scope_hint})),
+        "detected_types": sorted(list({u.type_hint for u in units if u.type_hint})),
     }
     planner = SemanticPlanner(
         ollama_client,

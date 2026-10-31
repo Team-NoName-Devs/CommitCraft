@@ -1,9 +1,10 @@
 """Validation for AI proposals and user plan modifications."""
 
+from pathlib import Path
 from commitcraft.change_units import ChangeUnit
 from commitcraft.dependencies import DependencyResolver
 from commitcraft.errors import DependencyError, PlanValidationError
-from commitcraft.schemas import CONVENTIONAL_COMMIT_REGEX, PlanProposal
+from commitcraft.schemas import CONVENTIONAL_COMMIT_REGEX, PlanProposal, parse_conventional_commit
 
 
 class PlanValidator:
@@ -19,6 +20,7 @@ class PlanValidator:
             return errors
 
         inventory_ids = {u.id for u in inventory}
+        unit_map = {u.id: u for u in inventory}
         assigned_ids: list[str] = []
         group_ids: set[str] = set()
 
@@ -32,7 +34,7 @@ class PlanValidator:
             if not g.unit_ids:
                 errors.append(f"Group '{g.id}' ({g.title}) contains no change units.")
 
-            # Commit message validation
+            # Commit message and type/scope coherence validation
             msg = g.message.strip()
             if not msg:
                 errors.append(f"Group '{g.id}' has an empty commit message.")
@@ -43,6 +45,71 @@ class PlanValidator:
                         f"Group '{g.id}' commit message '{msg}' does not conform to Conventional Commits "
                         "(e.g. 'type(scope): summary')."
                     )
+                else:
+                    c_type, c_scope, _, _ = parse_conventional_commit(first_line)
+                    if c_type and g.commit_type and g.commit_type.lower() != c_type:
+                        errors.append(
+                            f"Group '{g.id}' commit_type '{g.commit_type}' does not match message prefix '{c_type}'."
+                        )
+                    if g.scope and c_scope and g.scope.lower() != c_scope.lower():
+                        errors.append(
+                            f"Group '{g.id}' scope '{g.scope}' does not match message scope '{c_scope}'."
+                        )
+                    elif g.scope and not c_scope:
+                        errors.append(
+                            f"Group '{g.id}' specifies scope '{g.scope}', but commit message does not include it."
+                        )
+                    if g.scope and g.commit_type and g.scope.lower() == g.commit_type.lower():
+                        errors.append(
+                            f"Group '{g.id}' has redundant scope '{g.scope}' matching commit_type. Omit the scope or specify the component name."
+                        )
+
+            # Semantic type vs change unit validation
+            group_units = [unit_map[uid] for uid in g.unit_ids if uid in unit_map]
+            if group_units:
+                def is_test_unit(u: ChangeUnit) -> bool:
+                    p = Path(u.path)
+                    stem = p.stem.lower()
+                    return (
+                        u.type_hint == "test"
+                        or "tests" in p.parts
+                        or "test" in p.parts
+                        or stem.startswith("test_")
+                        or stem.endswith("_test")
+                    )
+
+                def is_doc_unit(u: ChangeUnit) -> bool:
+                    p = Path(u.path)
+                    stem = p.stem.lower()
+                    return (
+                        u.type_hint == "docs"
+                        or "docs" in p.parts
+                        or p.suffix.lower() in (".md", ".rst", ".adoc")
+                        or stem in ("license", "contributing", "readme")
+                    )
+
+                def is_ci_unit(u: ChangeUnit) -> bool:
+                    p = Path(u.path)
+                    return u.type_hint == "ci" or ".github" in p.parts or ".gitlab-ci.yml" in p.parts
+
+                if all(is_test_unit(u) for u in group_units):
+                    if g.commit_type.lower() in ("feat", "fix", "docs", "build", "ci"):
+                        errors.append(
+                            f"Group '{g.id}' contains only test files but has commit_type '{g.commit_type}'. "
+                            "Groups containing only tests must have commit_type 'test'."
+                        )
+                elif all(is_doc_unit(u) for u in group_units):
+                    if g.commit_type.lower() in ("feat", "fix", "test"):
+                        errors.append(
+                            f"Group '{g.id}' contains only documentation files but has commit_type '{g.commit_type}'. "
+                            "Groups containing only documentation must have commit_type 'docs'."
+                        )
+                elif all(is_ci_unit(u) for u in group_units):
+                    if g.commit_type.lower() in ("feat", "fix", "test", "docs"):
+                        errors.append(
+                            f"Group '{g.id}' contains only CI workflow files but has commit_type '{g.commit_type}'. "
+                            "Groups containing only CI changes must have commit_type 'ci'."
+                        )
 
             for uid in g.unit_ids:
                 # Unknown unit ID

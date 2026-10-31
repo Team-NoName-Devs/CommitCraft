@@ -178,3 +178,28 @@ def test_extract_context_info():
     assert extract_context_info("@@ -1,5 +1,5 @@") is None
     assert extract_context_info(None, None) is None
 
+
+def test_infer_type_hint():
+    """Test inferring conventional commit types from file paths and diffs."""
+    from commitcraft.diff_parser import infer_type_hint
+
+    assert infer_type_hint(".github/workflows/ci.yml") == "ci"
+    assert infer_type_hint("README.md") == "docs"
+    assert infer_type_hint("docs/architecture.md") == "docs"
+    assert infer_type_hint("CONTRIBUTING.md") == "docs"
+    assert infer_type_hint("pyproject.toml") == "build"
+    assert infer_type_hint("package.json") == "build"
+    assert infer_type_hint(".gitignore") == "chore"
+    assert infer_type_hint("ruff.toml") == "chore"
+    assert infer_type_hint("tests/test_cli.py") == "test"
+    assert infer_type_hint("service_test.go") == "test"
+    assert infer_type_hint("user.spec.ts") == "test"
+
+    # Semantic analysis of diff text
+    bug_diff = "@@ -10,3 +10,4 @@\n-x = None\n+if x is None:\n+    raise ValueError('null defect fix')\n"
+    assert infer_type_hint("src/service.py", bug_diff) == "fix"
+
+    perf_diff = "@@ -5,3 +5,4 @@\n-result = calc()\n+result = cache.memoize(calc)\n"
+    assert infer_type_hint("src/service.py", perf_diff) == "perf"
+
+
