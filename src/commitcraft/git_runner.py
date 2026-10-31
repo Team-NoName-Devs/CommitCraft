@@ -20,6 +20,7 @@ class GitRunner:
         input_data: Optional[Union[bytes, str]] = None,
         check: bool = True,
         cwd: Optional[Path] = None,
+        timeout: Optional[float] = None,
     ) -> subprocess.CompletedProcess[str]:
         """Execute a git command safely using argument vectors without a shell."""
         full_cmd = ["git", "--no-pager", "-C", str(cwd or self.repo_root)] + args
@@ -42,13 +43,14 @@ class GitRunner:
             else:
                 input_bytes = str(input_data).encode("utf-8")
 
+        timeout_sec = timeout if timeout is not None else self.timeout
         try:
             raw_result = subprocess.run(
                 full_cmd,
                 input=input_bytes,
                 capture_output=True,
                 check=False,
-                timeout=self.timeout,
+                timeout=timeout_sec,
                 env=env,
             )
             stdout_str = raw_result.stdout.decode("utf-8", errors="replace") if raw_result.stdout else ""
@@ -173,3 +175,27 @@ class GitRunner:
         ]
         res = self.run(args, env_override=env_override)
         return res.stdout
+
+    def get_remotes(self) -> list[str]:
+        """List configured Git remotes."""
+        res = self.run(["remote"], check=False)
+        return [r.strip() for r in res.stdout.splitlines() if r.strip()]
+
+    def push(
+        self,
+        remote: str,
+        branch_name: str,
+        set_upstream: bool = True,
+        force: bool = False,
+        env_override: Optional[dict[str, str]] = None,
+        timeout: Optional[float] = 60.0,
+    ) -> subprocess.CompletedProcess[str]:
+        """Push a branch to a remote repository."""
+        args = ["push"]
+        if set_upstream:
+            args.append("-u")
+        if force:
+            args.append("--force")
+        args.extend([remote, branch_name])
+        return self.run(args, env_override=env_override, check=True, timeout=timeout)
+

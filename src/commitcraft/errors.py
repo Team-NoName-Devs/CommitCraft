@@ -99,3 +99,8 @@ class ConfigurationError(CommitCraftError):
 
 class HookError(CommitCraftError):
     """Raised when Git hook installation or removal fails."""
+
+
+class PRSubmissionError(CommitCraftError):
+    """Raised when pushing branches or creating pull requests fails."""
+

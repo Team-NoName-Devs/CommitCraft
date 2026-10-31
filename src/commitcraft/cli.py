@@ -26,6 +26,7 @@ from commitcraft.hooks import HookManager
 from commitcraft.model_client import OllamaClient
 from commitcraft.planner import SemanticPlanner
 from commitcraft.pr_description import PRDescriptionGenerator
+from commitcraft.pr_sender import PRSender
 from commitcraft.repository import RepositoryInspector
 from commitcraft.review import PlanEditor, ReviewUI
 from commitcraft.snapshot import SnapshotEngine
@@ -257,6 +258,12 @@ def split(
     ),
     show_diffs: bool = typer.Option(
         False, "--diff", "-d", help="Display full unified diffs for change units in plan"
+    ),
+    base_branch: Optional[str] = typer.Option(
+        None, "--base", "-b", help="Base branch for PR submission (defaults to active branch)"
+    ),
+    send_pr: Optional[bool] = typer.Option(
+        None, "--send-pr/--no-send-pr", help="Automatically send or skip pull requests to base branch"
     ),
 ) -> None:
     """Analyze working tree and interactively split into logical commits."""
@@ -616,6 +623,92 @@ def split(
             expand=False,
         )
     )
+
+    # 8. Submit Pull Requests via GitHub CLI (gh)
+    target_base = base_branch or state.branch_name
+    branches_to_submit = [
+        (grp, exec_res.created_branches[grp.id])
+        for grp in exec_res.ordered_groups
+        if grp.id in exec_res.created_branches and exec_res.created_branches[grp.id] != target_base
+    ]
+
+    if branches_to_submit:
+        should_send = False
+        if send_pr is not None:
+            should_send = send_pr
+        elif not auto_approve:
+            try:
+                should_send = Confirm.ask(
+                    f"\nDo you want to send pull request(s) to the base branch '[cyan]{target_base}[/cyan]'?",
+                    default=False,
+                )
+            except (EOFError, KeyboardInterrupt):
+                should_send = False
+
+        if should_send:
+            repo_root = Path(repo.working_tree_dir) if repo.working_tree_dir else Path(repo.git_dir).parent
+            pr_sender = PRSender(repo_root=repo_root, runner=runner)
+
+            if not pr_sender.is_gh_available():
+                console.print("\n[bold red]✘ GitHub CLI ('gh') is not installed or not found in PATH.[/bold red]")
+                console.print("[dim]Install gh (https://cli.github.com/) and run 'gh auth login' to send pull requests automatically.[/dim]")
+            else:
+                remote = pr_sender.get_remote()
+                if not remote:
+                    console.print("\n[bold red]✘ No Git remote found in repository. Cannot push branches or send PRs.[/bold red]")
+                    console.print("[dim]Add a remote using 'git remote add origin <url>' before sending PRs.[/dim]")
+                else:
+                    console.print(f"\n[bold cyan]Pushing {len(branches_to_submit)} branch(es) to remote '{remote}' and creating pull request(s)...[/bold cyan]")
+
+                    # Map each group to its saved PR markdown file
+                    pr_file_map: dict[str, Path] = {}
+                    for grp in exec_res.ordered_groups:
+                        for sp in saved_paths:
+                            if sp.name == f"PR_{grp.id}.md" or f"_{grp.id}" in sp.stem or len(saved_paths) == 1:
+                                pr_file_map[grp.id] = sp
+                                break
+
+                    created_prs_count = 0
+                    for grp, b_name in branches_to_submit:
+                        # 1. Push branch to remote first
+                        push_ok = False
+                        with console.status(f"[cyan]Pushing branch '{b_name}' to {remote}...[/cyan]"):
+                            try:
+                                pr_sender.push_branch(branch_name=b_name, remote=remote)
+                                push_ok = True
+                                console.print(f"  [bold green]✔ Pushed branch:[/bold green] [cyan]{b_name}[/cyan] -> [dim]{remote}/{b_name}[/dim]")
+                            except Exception as e:
+                                console.print(f"  [bold red]✘ Failed to push branch '{b_name}':[/bold red] {e}")
+
+                        if not push_ok:
+                            console.print(f"  [yellow]Skipping PR creation for '{b_name}' because push failed.[/yellow]")
+                            continue
+
+                        # 2. Create pull request via gh
+                        pr_file = pr_file_map.get(grp.id)
+                        with console.status(f"[cyan]Creating PR for '{b_name}' -> '{target_base}' via gh...[/cyan]"):
+                            success, pr_url, err_msg = pr_sender.create_pr(
+                                branch_name=b_name,
+                                base_branch=target_base,
+                                title=grp.message,
+                                body_file=pr_file,
+                                body=prs.get(grp.id),
+                            )
+
+                        if success:
+                            created_prs_count += 1
+                            console.print(f"  [bold green]✔ PR Created:[/bold green] [white]{pr_url or b_name}[/white]")
+                        else:
+                            if err_msg and "already exists" in err_msg.lower():
+                                console.print(f"  [yellow]ℹ PR for '{b_name}' already exists:[/yellow] {err_msg}")
+                            else:
+                                console.print(f"  [bold red]✘ Failed to create PR for '{b_name}':[/bold red] {err_msg}")
+
+                    if created_prs_count > 0:
+                        console.print(f"\n[bold green]✔ Successfully created {created_prs_count} pull request(s) on GitHub![/bold green]\n")
+        elif not auto_approve and send_pr is False:
+            console.print("[dim]Skipping remote push and pull request creation.[/dim]")
+
 
 
 def main() -> None:

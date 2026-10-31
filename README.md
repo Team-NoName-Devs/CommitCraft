@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: >=3.11](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/)
 [![Model: llama3.2:3b](https://img.shields.io/badge/Ollama-llama3.2%3A3b-orange)](https://ollama.com/library/llama3.2)
-[![Tests: 133 passed](https://img.shields.io/badge/tests-133%20passed-brightgreen)](tests/)
+[![Tests: 174 passed](https://img.shields.io/badge/tests-174%20passed-brightgreen)](tests/)
 
 ---
 
@@ -19,7 +19,7 @@ Eventually, they create **one monolithic commit** containing all those changes. 
 
 **CommitCraft** analyzes a repository's intended changes, extracts independently addressable change units (including splitting independent text hunks from the same file), and uses a local language model (**Llama 3.2 3B Instruct** running on **Ollama**) to propose logically related commit groups.
 
-Developers inspect, reorder, and refine the proposal before CommitCraft constructs actual Git commits using isolated Git indexes, strictly proving **final-tree equality** before moving any branch pointer. Once verified, CommitCraft automatically creates dedicated Git branches and individual, editable Markdown pull-request descriptions for each group—following idiomatic open-source contribution practices.
+Developers inspect, reorder, and refine the proposal before CommitCraft constructs actual Git commits using isolated Git indexes, strictly proving **final-tree equality** before moving any branch pointer. Once verified, CommitCraft automatically creates dedicated Git branches and individual, editable Markdown pull-request descriptions for each group—following idiomatic open-source contribution practices. Finally, CommitCraft prompts to push the new branches to your remote and open pull requests against your base branch via the GitHub CLI (`gh`).
 
 ---
 
@@ -42,6 +42,7 @@ flowchart TD
     M --> N[Guarded update-ref Branch Installation]
     N --> O[Real Index Synchronization: read-tree HEAD]
     O --> P[Individual PR Descriptions: .commit_craft/prs/PR_*.md]
+    P --> Q[Remote Push & PR Submission via gh]
 ```
 
 ---
